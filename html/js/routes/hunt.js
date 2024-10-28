@@ -372,11 +372,6 @@ const huntComponent = {
 
       this.selectAllState = false;
       this.selectedCount = 0;
-
-      if (document.activeElement) {
-        // Release focus to avoid clicking away causing a second hunt
-        document.activeElement.blur();
-      }
     },
     stopRefreshTimer() {
       if (this.autoRefreshTimer) {
