@@ -1940,14 +1940,14 @@
                       {{ i18n.status }}: {{ detect.isEnabled ? i18n.enabled : i18n.disabled }}
                     </div>
                     <div data-aid="detection_metadata_enabled_toggle">
-                      <v-switch id="detection-enabled-edit" inset v-model="detect.isEnabled" @change="saveDetection(false)"></v-switch>
+                      <v-switch id="detection-enabled-edit" inset v-model="detect.isEnabled" color="primary" @change="saveDetection(false)"></v-switch>
                     </div>
                   </span>
                   <div id="ops-buttons">
                     <v-btn id="detection-duplicate" color="primary" @click="duplicateDetection()" data-aid="detection_metadata_duplicate" class="flex-basis-50">
                       {{i18n.duplicate}}
                     </v-btn>
-                    <v-btn :disabled="detect.isCommunity" id="detection-delete" color="error" @click="deleteDetection()" data-aid="detection_metadata_delete" class="flex-basis-50">
+                    <v-btn :disabled="detect.isCommunity" id="detection-delete" :color="detect.isCommunity ? 'black' : 'error'" @click="deleteDetection()" data-aid="detection_metadata_delete" class="flex-basis-50">
                       {{i18n.delete}}
                     </v-btn>
                   </div>
