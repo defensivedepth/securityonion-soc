@@ -349,7 +349,7 @@ const i18n = {
       diskUsageRootAbbr: 'Root',
       downloads: 'Downloads',
       downloadsAgentUnavailable: 'Evaluation installs and Import installs do not support remote elastic agents. The links below are shown for demonstration purposes only.',
-      downloadsFirewallTip: 'When installing the Elastic Agent onto remote systems, be sure to <a href="/#/config?s=firewall.hostgroups.elastic_agent_endpoint">allow network access through the firewall</a>.',
+      downloadsFirewallTip: '<span class="d-block">When installing the Elastic Agent onto remote systems, be sure to <a class="text-white" href="/#/config?s=firewall.hostgroups.elastic_agent_endpoint">allow network access through the firewall</a>.</span>',
       downloadsInfo: 'These <a href="/docs/elastic-agent.html">Elastic Agent</a> installers are customized for this specific <a href="/docs/elastic-fleet.html">Elastic Fleet</a> installation. These files are not signed. If you need signed non-customized Elastic Agent installers, you can get them from <a href="https://www.elastic.co/downloads/elastic-agent">elastic.co</a>.',
       downloadsElasticAgent: 'Elastic Agent Installers',
       downloadPackets: 'Download the packets as a PCAP file',
