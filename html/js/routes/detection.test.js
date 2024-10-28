@@ -454,16 +454,26 @@ test('revertEnabled', () => {
 	expect(comp.origDetect.isEnabled).toBe(false);
 });
 
+function ClassList(arr) {
+	this.arr = arr;
+	this.contains = (cls) => {
+		return this.arr.includes(cls);
+	}
+}
+
 test('isFieldValid', () => {
-	comp.$refs = {}
-	expect(comp.isFieldValid('foo')).toBe(true)
+	comp.$refs = {};
+	expect(comp.isFieldValid('foo')).toBe(true);
 
-	comp.$refs = { bar: { valid: false } }
-	expect(comp.isFieldValid('foo')).toBe(true)
-	expect(comp.isFieldValid('bar')).toBe(false)
+	comp.$refs = { bar: { classList: new ClassList(['a', 'v-input--error', 'b', 'c']) } };
+	expect(comp.isFieldValid('foo')).toBe(true);
+	expect(comp.isFieldValid('bar')).toBe(false);
 
-	comp.$refs = { bar: { valid: true } }
-	expect(comp.isFieldValid('bar')).toBe(true)
+	comp.$refs = { bar: { classList: new ClassList(['a', 'b', 'c']) } };
+	expect(comp.isFieldValid('bar')).toBe(true);
+
+	comp.$refs = { bar: {} };
+	expect(comp.isFieldValid('bar')).toBe(false);
 });
 
 test('onNewDetectionLanguageChange', async () => {
@@ -471,7 +481,7 @@ test('onNewDetectionLanguageChange', async () => {
 		"suricata": 'a [publicId]',
 		"strelka": 'b [publicId]',
 		"elastalert": 'c [publicId]',
-	}
+	};
 	// no language means no engine means no request means no change
 	comp.detect = { language: '', content: 'x' };
 	await comp.onNewDetectionLanguageChange();
