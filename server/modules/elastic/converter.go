@@ -17,6 +17,8 @@ import (
 	"github.com/security-onion-solutions/securityonion-soc/licensing"
 	"github.com/security-onion-solutions/securityonion-soc/model"
 	"github.com/security-onion-solutions/securityonion-soc/util"
+
+	"github.com/tidwall/gjson"
 )
 
 func stripSegmentOptions(keys []string) []string {
@@ -271,6 +273,21 @@ func convertToElasticRequest(fieldDefs map[string]*FieldDefinition, intervals in
 	return esJson, err
 }
 
+func convertToElasticMSearchRequest(fieldDefs map[string]*FieldDefinition, criteria *model.EventMSearchCriteria) (string, error) {
+	var err error
+	var esJson string
+
+	esMap := make(map[string]interface{})
+	esMap["query"] = makeQuery(fieldDefs, criteria.ParsedQuery, time.Time{}, time.Time{})
+
+	bytes, err := json.WriteJson(esMap)
+	if err == nil {
+		esJson = string(bytes)
+	}
+
+	return esJson, err
+}
+
 func convertToElasticScrollRequest(fieldDefs map[string]*FieldDefinition, criteria *model.EventScrollCriteria, maxScrollSize int) (string, error) {
 	var err error
 	var esJson string
@@ -490,6 +507,27 @@ func convertFromElasticScrollResults(fieldDefs map[string]*FieldDefinition, esJs
 			}).Warn("Shard failure")
 			err = errors.New("ERROR_QUERY_FAILED_ELASTICSEARCH")
 		}
+	}
+
+	return err
+}
+
+func convertFromElasticMSearchResults(fieldDefs map[string]*FieldDefinition, esJson string, results *model.EventMSearchResults) (err error) {
+	responseCount := int(gjson.Get(esJson, "responses.#").Num)
+
+	results.ElapsedMs = int(gjson.Get(esJson, "took").Num)
+	results.Responses = make([]*model.EventSearchResults, 0, responseCount)
+
+	for i := range responseCount {
+		response := gjson.Get(esJson, fmt.Sprintf("responses.%d", i))
+		res := model.NewEventSearchResults()
+
+		err = convertFromElasticResults(fieldDefs, response.String(), res)
+		if err != nil {
+			return err
+		}
+
+		results.Responses = append(results.Responses, res)
 	}
 
 	return err
