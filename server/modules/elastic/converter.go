@@ -522,6 +522,16 @@ func convertFromElasticMSearchResults(fieldDefs map[string]*FieldDefinition, esJ
 		response := gjson.Get(esJson, fmt.Sprintf("responses.%d", i))
 		res := model.NewEventSearchResults()
 
+		errField := response.Get("error")
+		if errField.String() != "" {
+			msg := response.Get("error.reason").String()
+			if msg == "" {
+				msg = errField.String()
+			}
+
+			return errors.New(msg)
+		}
+
 		err = convertFromElasticResults(fieldDefs, response.String(), res)
 		if err != nil {
 			return err
@@ -530,7 +540,7 @@ func convertFromElasticMSearchResults(fieldDefs map[string]*FieldDefinition, esJ
 		results.Responses = append(results.Responses, res)
 	}
 
-	return err
+	return nil
 }
 
 func parseTime(fieldmap map[string]interface{}, key string) *time.Time {

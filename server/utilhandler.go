@@ -82,10 +82,14 @@ func (h *UtilHandler) putReverseLookup(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.server.Eventstore.MSearch(ctx, msearchRequests)
 	if err != nil {
-		logger.WithError(err).Error("failed to perform ES lookup")
-		web.Respond(w, r, http.StatusInternalServerError, err)
+		if strings.Contains(err.Error(), "no such index") {
+			logger.WithError(err).Warn("index not found, skipping ES lookup")
+		} else {
+			logger.WithError(err).Error("failed to perform ES lookup")
+			web.Respond(w, r, http.StatusInternalServerError, err)
 
-		return
+			return
+		}
 	}
 
 	// parse results from ES lookup and remove results from dedup
