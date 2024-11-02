@@ -7,10 +7,6 @@
 package modules
 
 import (
-	"fmt"
-	"github.com/apex/log"
-)
-import (
 	"github.com/security-onion-solutions/securityonion-soc/module"
 	"github.com/security-onion-solutions/securityonion-soc/server"
 	"github.com/security-onion-solutions/securityonion-soc/server/modules/elastalert"
