@@ -149,6 +149,7 @@ func (e *OsqueryEngine) GetState() *model.EngineState {
 }
 
 func (e *OsqueryEngine) Init(config module.ModuleConfig) (err error) {
+	log.WithField("detectionEngine", "Test55").Info("Initializing OsqueryEngine")
 	e.SyncThread = &sync.WaitGroup{}
 	e.InterruptChan = make(chan bool, 1)
 	e.IntegrityCheckerData.Thread = &sync.WaitGroup{}
@@ -206,7 +207,8 @@ func (e *OsqueryEngine) Start() error {
 	e.IntegrityCheckerData.IsRunning = true
 
 	// start long running processes
-	log.WithField("detectionEngine", "osquery55")
+	log.WithField("detectionEngine", "Test").Info("Initializing OsqueryEngine")
+
 	go detections.SyncScheduler(e, &e.SyncSchedulerParams, &e.EngineState, model.EngineNameOsquery, &e.isRunning, e.IOManager)
 	go detections.IntegrityChecker(model.EngineNameOsquery, e, &e.IntegrityCheckerData, &e.EngineState.IntegrityFailure)
 
