@@ -80,8 +80,6 @@ type OsqueryEngine struct {
 	failAfterConsecutiveErrorCount     int
 	elastAlertRulesFolder              string
 	rulesFingerprintFile               string
-	sigmaPipelineFinal                 string
-	sigmaPipelineSO                    string
 	sigmaPipelinesFingerprintFile      string
 	autoEnabledSigmaRules              []string
 	additionalAlerters                 []string
@@ -160,8 +158,6 @@ func (e *OsqueryEngine) Init(config module.ModuleConfig) (err error) {
 	e.airgapBasePath = module.GetStringDefault(config, "airgapBasePath", DEFAULT_AIRGAP_BASE_PATH)
 	e.CommunityRulesImportFrequencySeconds = module.GetIntDefault(config, "communityRulesImportFrequencySeconds", DEFAULT_COMMUNITY_RULES_IMPORT_FREQUENCY_SECONDS)
 	e.elastAlertRulesFolder = module.GetStringDefault(config, "elastAlertRulesFolder", DEFAULT_ELASTALERT_RULES_FOLDER)
-	e.sigmaPipelineFinal = module.GetStringDefault(config, "sigmaPipelineFinal", DEFAULT_SIGMA_PIPELINE_FINAL_FILE)
-	e.sigmaPipelineSO = module.GetStringDefault(config, "sigmaPipelineSO", DEFAULT_SIGMA_PIPELINE_SO_FILE)
 	e.sigmaPipelinesFingerprintFile = module.GetStringDefault(config, "sigmaPipelinesFingerprintFile", DEFAULT_SIGMA_PIPELINES_FINGERPRINT_FILE)
 	e.rulesFingerprintFile = module.GetStringDefault(config, "rulesFingerprintFile", DEFAULT_RULES_FINGERPRINT_FILE)
 	e.autoEnabledSigmaRules = module.GetStringArrayDefault(config, "autoEnabledSigmaRules", []string{"securityonion-resources+critical", "securityonion-resources+high"})
