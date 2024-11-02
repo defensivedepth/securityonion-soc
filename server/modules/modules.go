@@ -48,12 +48,5 @@ func BuildModuleMap(srv *server.Server) map[string]module.Module {
 	moduleMap["strelkaengine"] = strelka.NewStrelkaEngine(srv)
 	moduleMap["osqueryengine"] = osquery.NewOsqueryEngine(srv)
 
-	// Log the contents of moduleMap
-	for moduleName, moduleInstance := range moduleMap {
-		log.WithField("moduleName", moduleName).
-			WithField("moduleType", fmt.Sprintf("%T", moduleInstance)).
-			Info("Module added to moduleMap")
-	}
-
 	return moduleMap
 }

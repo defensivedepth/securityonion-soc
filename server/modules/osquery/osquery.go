@@ -80,7 +80,6 @@ type OsqueryEngine struct {
 	failAfterConsecutiveErrorCount     int
 	elastAlertRulesFolder              string
 	rulesFingerprintFile               string
-	sigmaPipelinesFingerprintFile      string
 	autoEnabledSigmaRules              []string
 	additionalAlerters                 []string
 	additionalAlerterParams            string
@@ -159,23 +158,10 @@ func (e *OsqueryEngine) Init(config module.ModuleConfig) (err error) {
 	e.airgapBasePath = module.GetStringDefault(config, "airgapBasePath", DEFAULT_AIRGAP_BASE_PATH)
 	e.CommunityRulesImportFrequencySeconds = module.GetIntDefault(config, "communityRulesImportFrequencySeconds", DEFAULT_COMMUNITY_RULES_IMPORT_FREQUENCY_SECONDS)
 	e.elastAlertRulesFolder = module.GetStringDefault(config, "elastAlertRulesFolder", DEFAULT_ELASTALERT_RULES_FOLDER)
-	e.sigmaPipelinesFingerprintFile = module.GetStringDefault(config, "sigmaPipelinesFingerprintFile", DEFAULT_SIGMA_PIPELINES_FINGERPRINT_FILE)
 	e.rulesFingerprintFile = module.GetStringDefault(config, "rulesFingerprintFile", DEFAULT_RULES_FINGERPRINT_FILE)
 	e.autoEnabledSigmaRules = module.GetStringArrayDefault(config, "autoEnabledSigmaRules", []string{"securityonion-resources+critical", "securityonion-resources+high"})
 	e.CommunityRulesImportErrorSeconds = module.GetIntDefault(config, "communityRulesImportErrorSeconds", DEFAULT_COMMUNITY_RULES_IMPORT_ERROR_SECS)
 	e.failAfterConsecutiveErrorCount = module.GetIntDefault(config, "failAfterConsecutiveErrorCount", DEFAULT_FAIL_AFTER_CONSECUTIVE_ERROR_COUNT)
-	e.additionalAlerters = module.GetStringArrayDefault(config, "additionalAlerters", []string{})
-	e.additionalAlerterParams = module.GetStringDefault(config, "additionalSev0AlertersParams", "")
-	e.informationalSeverityAlerters = module.GetStringArrayDefault(config, "additionalSev1Alerters", []string{})
-	e.informationalSeverityAlerterParams = module.GetStringDefault(config, "additionalSev1AlertersParams", "")
-	e.lowSeverityAlerters = module.GetStringArrayDefault(config, "additionalSev2Alerters", []string{})
-	e.lowSeverityAlerterParams = module.GetStringDefault(config, "additionalSev2AlertersParams", "")
-	e.mediumSeverityAlerters = module.GetStringArrayDefault(config, "additionalSev3Alerters", []string{})
-	e.mediumSeverityAlerterParams = module.GetStringDefault(config, "additionalSev3AlertersParams", "")
-	e.highSeverityAlerters = module.GetStringArrayDefault(config, "additionalSev4Alerters", []string{})
-	e.highSeverityAlerterParams = module.GetStringDefault(config, "additionalSev4AlertersParams", "")
-	e.criticalSeverityAlerters = module.GetStringArrayDefault(config, "additionalSev5Alerters", []string{})
-	e.criticalSeverityAlerterParams = module.GetStringDefault(config, "additionalSev5AlertersParams", "")
 
 	e.IntegrityCheckerData.FrequencySeconds = module.GetIntDefault(config, "integrityCheckFrequencySeconds", DEFAULT_INTEGRITY_CHECK_FREQUENCY_SECONDS)
 
