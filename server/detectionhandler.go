@@ -171,6 +171,8 @@ func (h *DetectionHandler) createDetection(w http.ResponseWriter, r *http.Reques
 		detect.Engine = model.EngineNameStrelka
 	case "suricata":
 		detect.Engine = model.EngineNameSuricata
+	case "osquery":
+		detect.Engine = model.EngineNameOsquery
 	}
 
 	engine, ok := h.server.DetectionEngines[detect.Engine]

@@ -32,6 +32,7 @@ const (
 	SigLangSigma    SigLanguage = "sigma"    // yaml
 	SigLangSuricata SigLanguage = "suricata" // action, header, options
 	SigLangYara     SigLanguage = "yara"     // meta, strings, condition
+	SigLangOsquery  SigLanguage = "osquery"  // sql
 
 	SeverityUnknown       Severity = "unknown"
 	SeverityInformational Severity = "informational"
@@ -46,6 +47,7 @@ const (
 	EngineNameSuricata   EngineName = "suricata"
 	EngineNameStrelka    EngineName = "strelka"
 	EngineNameElastAlert EngineName = "elastalert"
+	EngineNameOsquery    EngineName = "osquery"
 
 	OverrideTypeSuppress     OverrideType = "suppress"
 	OverrideTypeThreshold    OverrideType = "threshold"
@@ -77,6 +79,12 @@ var (
 			IDType:      IDTypeUUID,
 			ScanType:    ScanTypeElastic,
 			SigLanguage: SigLangSigma,
+		},
+		EngineNameOsquery: {
+			Name:        string(EngineNameOsquery),
+			IDType:      IDTypeUUID,
+			ScanType:    ScanTypeElastic,
+			SigLanguage: SigLangOsquery,
 		},
 	}
 
