@@ -3,7 +3,7 @@
 // https://securityonion.net/license; you may not use this file except in compliance with the
 // Elastic License 2.0.
 
-package elastalert
+package osquery
 
 type OneOrMore[T comparable] struct {
 	Value  T
