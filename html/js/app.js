@@ -1118,7 +1118,7 @@ $(document).ready(function () {
         this.loadServerSettings(true);
       },
       getDetectionEngines() {
-        return ['elastalert', 'strelka', 'suricata'];
+        return ['elastalert', 'strelka', 'suricata', 'osquery'];
       },
       getDetectionEngineStatusClass(engine) {
         switch (this.getDetectionEngineStatus(engine)) {

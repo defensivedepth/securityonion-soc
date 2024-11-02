@@ -29,6 +29,7 @@ func TestBuildModuleMap(t *testing.T) {
 	findModule(t, mm, "suricataengine")
 	findModule(t, mm, "elastalertengine")
 	findModule(t, mm, "strelkaengine")
+	findModule(t, mm, "osqueryengine")
 }
 
 func findModule(t *testing.T, mm map[string]module.Module, module string) {

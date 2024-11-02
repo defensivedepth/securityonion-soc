@@ -27,6 +27,7 @@ type DetectionsStatus struct {
 	ElastAlert *EngineState `json:"elastalert"`
 	Suricata   *EngineState `json:"suricata"`
 	Strelka    *EngineState `json:"strelka"`
+	Osquery    *EngineState `json:"osquery"`
 }
 
 type EngineState struct {
@@ -50,6 +51,7 @@ func NewStatus() *Status {
 			ElastAlert: &EngineState{},
 			Strelka:    &EngineState{},
 			Suricata:   &EngineState{},
+			Osquery:    &EngineState{},
 		},
 	}
 	return newStatus

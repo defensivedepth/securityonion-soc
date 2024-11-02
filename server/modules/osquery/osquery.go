@@ -46,10 +46,8 @@ const (
 	DEFAULT_AIRGAP_ENABLED                           = false
 	DEFAULT_COMMUNITY_RULES_IMPORT_FREQUENCY_SECONDS = 86400
 	DEFAULT_ELASTALERT_RULES_FOLDER                  = "/opt/sensoroni/elastalert"
-	DEFAULT_RULES_FINGERPRINT_FILE                   = "/opt/sensoroni/fingerprints/sigma.fingerprint"
-	DEFAULT_SIGMA_PIPELINES_FINGERPRINT_FILE         = "/opt/sensoroni/fingerprints/sigma.pipelines.fingerprint"
-	DEFAULT_SIGMA_PIPELINE_FINAL_FILE                = "/opt/sensoroni/sigma_final_pipeline.yaml"
-	DEFAULT_SIGMA_PIPELINE_SO_FILE                   = "/opt/sensoroni/sigma_so_pipeline.yaml"
+	DEFAULT_RULES_FINGERPRINT_FILE                   = "/opt/sensoroni/fingerprints/osquery.fingerprint"
+	DEFAULT_SIGMA_PIPELINES_FINGERPRINT_FILE         = "/opt/sensoroni/fingerprints/osquery.pipelines.fingerprint"
 	DEFAULT_REPOS_FOLDER                             = "/opt/sensoroni/sigma/repos"
 	DEFAULT_STATE_FILE_PATH                          = "/opt/sensoroni/fingerprints/elastalertengine.state"
 	DEFAULT_COMMUNITY_RULES_IMPORT_ERROR_SECS        = 300
