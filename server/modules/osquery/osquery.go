@@ -6,7 +6,6 @@
 package osquery
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/md5"
@@ -51,7 +50,6 @@ const (
 	DEFAULT_DENY_REGEX                               = ""
 	DEFAULT_AIRGAP_ENABLED                           = false
 	DEFAULT_COMMUNITY_RULES_IMPORT_FREQUENCY_SECONDS = 86400
-	DEFAULT_SIGMA_PACKAGE_DOWNLOAD_TEMPLATE          = "https://github.com/SigmaHQ/sigma/releases/latest/download/sigma_%s.zip"
 	DEFAULT_ELASTALERT_RULES_FOLDER                  = "/opt/sensoroni/elastalert"
 	DEFAULT_RULES_FINGERPRINT_FILE                   = "/opt/sensoroni/fingerprints/sigma.fingerprint"
 	DEFAULT_SIGMA_PIPELINES_FINGERPRINT_FILE         = "/opt/sensoroni/fingerprints/sigma.pipelines.fingerprint"
@@ -170,7 +168,6 @@ func (e *OsqueryEngine) Init(config module.ModuleConfig) (err error) {
 
 	e.airgapBasePath = module.GetStringDefault(config, "airgapBasePath", DEFAULT_AIRGAP_BASE_PATH)
 	e.CommunityRulesImportFrequencySeconds = module.GetIntDefault(config, "communityRulesImportFrequencySeconds", DEFAULT_COMMUNITY_RULES_IMPORT_FREQUENCY_SECONDS)
-	e.sigmaPackageDownloadTemplate = module.GetStringDefault(config, "sigmaPackageDownloadTemplate", DEFAULT_SIGMA_PACKAGE_DOWNLOAD_TEMPLATE)
 	e.elastAlertRulesFolder = module.GetStringDefault(config, "elastAlertRulesFolder", DEFAULT_ELASTALERT_RULES_FOLDER)
 	e.sigmaPipelineFinal = module.GetStringDefault(config, "sigmaPipelineFinal", DEFAULT_SIGMA_PIPELINE_FINAL_FILE)
 	e.sigmaPipelineSO = module.GetStringDefault(config, "sigmaPipelineSO", DEFAULT_SIGMA_PIPELINE_SO_FILE)
@@ -191,17 +188,6 @@ func (e *OsqueryEngine) Init(config module.ModuleConfig) (err error) {
 	e.highSeverityAlerterParams = module.GetStringDefault(config, "additionalSev4AlertersParams", "")
 	e.criticalSeverityAlerters = module.GetStringArrayDefault(config, "additionalSev5Alerters", []string{})
 	e.criticalSeverityAlerterParams = module.GetStringDefault(config, "additionalSev5AlertersParams", "")
-
-	if custom, ok := config["additionalUserDefinedNotifications"]; ok {
-		switch ct := custom.(type) {
-		case map[string]interface{}:
-			customAlerters := custom.(map[string]interface{})
-			e.customAlerters = &customAlerters
-			log.WithField("custom", e.customAlerters).Debug("Found additional user defined notifications settings")
-		default:
-			log.WithField("castedType", ct).Error("additional user defined notifications cast error")
-		}
-	}
 
 	e.IntegrityCheckerData.FrequencySeconds = module.GetIntDefault(config, "integrityCheckFrequencySeconds", DEFAULT_INTEGRITY_CHECK_FREQUENCY_SECONDS)
 
@@ -523,42 +509,7 @@ func (e *OsqueryEngine) Sync(logger *log.Entry, forceSync bool) error {
 	// announce the beginning of the sync
 	e.EngineState.Syncing = true
 
-	// Check to see if the sigma processing pipelines have changed.
-	// If they have, set forceSync to true to regenerate the elastalert rule files.
-	regenNeeded, sigmaPipelineNewHash, err := e.checkSigmaPipelines()
-	if err != nil {
-		logger.WithField("sigmaPipelineError", err).Error("failed to check the sigma processing pipelines")
-	} else {
-		logger.Info("successfully checked the sigma processing pipelines")
-	}
-
-	if regenNeeded {
-		forceSync = true
-	}
-
-	var zips map[string][]byte
 	var errMap map[string]error
-
-	// If the system is Airgap, load the sigma packages from disk.
-	// else, not Airgap, download the sigma packages.
-	if e.airgapEnabled {
-		zips, errMap = e.loadSigmaPackagesFromDisk()
-	} else {
-		zips, errMap = e.downloadSigmaPackages()
-	}
-
-	if len(errMap) != 0 {
-		logger.WithField("sigmaPackageErrors", errMap).Error("something went wrong loading sigma packages")
-
-		if e.notify {
-			e.srv.Host.Broadcast("detection-sync", "detections", server.SyncStatus{
-				Engine: model.EngineNameOsquery,
-				Status: "error",
-			})
-		}
-
-		return detections.ErrSyncFailed
-	}
 
 	// ensure repos are up to date
 	dirtyRepos, repoChanges, err := detections.UpdateRepos(&e.isRunning, e.reposFolder, e.rulesRepos, e.IOManager)
@@ -567,7 +518,7 @@ func (e *OsqueryEngine) Sync(logger *log.Entry, forceSync bool) error {
 			return err
 		}
 
-		logger.WithError(err).Error("unable to update Sigma repos")
+		logger.WithError(err).Error("unable to update Osquery repos")
 
 		if e.notify {
 			e.srv.Host.Broadcast("detection-sync", "detections", server.SyncStatus{
@@ -577,12 +528,6 @@ func (e *OsqueryEngine) Sync(logger *log.Entry, forceSync bool) error {
 		}
 
 		return detections.ErrSyncFailed
-	}
-
-	zipHashes := map[string]string{}
-	for pkg, data := range zips {
-		h := sha256.Sum256(data)
-		zipHashes[pkg] = base64.StdEncoding.EncodeToString(h[:])
 	}
 
 	if !forceSync {
@@ -604,7 +549,7 @@ func (e *OsqueryEngine) Sync(logger *log.Entry, forceSync bool) error {
 			return detections.ErrSyncFailed
 		}
 
-		if reflect.DeepEqual(oldHashes, zipHashes) && !repoChanges {
+		if !repoChanges {
 			// only an exact match means no work needs to be done.
 			// If there's extra hashes in the old file, we need to remove them.
 			// If there's extra hashes in the new file, we need to add them.
@@ -640,16 +585,11 @@ func (e *OsqueryEngine) Sync(logger *log.Entry, forceSync bool) error {
 		return detections.ErrModuleStopped
 	}
 
-	detects, errMap := e.parseZipRules(zips)
-	if errMap != nil {
-		logger.WithField("sigmaParseError", errMap).Error("something went wrong while parsing sigma rule files from zips")
-	}
-
 	if errors.Is(errMap["module"], detections.ErrModuleStopped) || !e.isRunning {
 		return detections.ErrModuleStopped
 	}
 
-	repoDets, errMap := e.parseRepoRules(dirtyRepos)
+	detects, errMap := e.parseRepoRules(dirtyRepos)
 	if errMap != nil {
 		logger.WithField("sigmaParseError", errMap).Error("something went wrong while parsing sigma rule files from repos")
 	}
@@ -658,14 +598,12 @@ func (e *OsqueryEngine) Sync(logger *log.Entry, forceSync bool) error {
 		return detections.ErrModuleStopped
 	}
 
-	detects = append(detects, repoDets...)
-
 	detects = detections.DeduplicateByPublicId(detects)
 
 	errMap, err = e.syncCommunityDetections(e.srv.Context, logger, detects)
 	if err != nil {
 		if errors.Is(err, detections.ErrModuleStopped) {
-			logger.Info("incomplete sync of elastalert community detections due to module stopping")
+			logger.Info("incomplete sync of osquery community detections due to module stopping")
 			return err
 		}
 
@@ -677,7 +615,7 @@ func (e *OsqueryEngine) Sync(logger *log.Entry, forceSync bool) error {
 			}
 		}
 
-		logger.WithError(err).Error("unable to sync elastalert community detections")
+		logger.WithError(err).Error("unable to sync osquery community detections")
 
 		if e.notify {
 			e.srv.Host.Broadcast("detection-sync", "detections", server.SyncStatus{
@@ -750,6 +688,7 @@ func (e *OsqueryEngine) Sync(logger *log.Entry, forceSync bool) error {
 			})
 		}
 	} else {
+		zipHashes := "TOFIX"
 		fingerprints, err := json.Marshal(zipHashes)
 		if err != nil {
 			logger.WithError(err).Error("unable to marshal rules fingerprints")
@@ -757,16 +696,6 @@ func (e *OsqueryEngine) Sync(logger *log.Entry, forceSync bool) error {
 			err = e.WriteFile(e.rulesFingerprintFile, fingerprints, 0644)
 			if err != nil {
 				logger.WithError(err).WithField("fingerprintPath", e.rulesFingerprintFile).Error("unable to write rules fingerprint file")
-			}
-		}
-
-		// Now that a successful sync completed - if the sigma pipelines changed, write out the new sigma pipelines hash .
-		if regenNeeded {
-			err = e.WriteFile(e.sigmaPipelinesFingerprintFile, []byte(sigmaPipelineNewHash), 0644)
-			if err != nil {
-				logger.WithError(err).WithField("fingerprintPath", e.sigmaPipelinesFingerprintFile).Error("unable to write sigma pipelines fingerprint file")
-			} else {
-				logger.WithField("fingerprintPath", e.sigmaPipelinesFingerprintFile).Info("updated sigma pipelines fingerprint file")
 			}
 		}
 
@@ -828,67 +757,6 @@ func (e *OsqueryEngine) hashFile(filePath string) (string, error) {
 	}
 	hash := sha256.Sum256(data)
 	return hex.EncodeToString(hash[:]), nil
-}
-
-func (e *OsqueryEngine) parseZipRules(pkgZips map[string][]byte) (detects []*model.Detection, errMap map[string]error) {
-	errMap = map[string]error{} // map[pkgName|fileName]error
-	defer func() {
-		if len(errMap) == 0 {
-			errMap = nil
-		}
-	}()
-
-	for _, pkg := range e.sigmaRulePackages {
-		if !e.isRunning {
-			return nil, map[string]error{"module": detections.ErrModuleStopped}
-		}
-
-		zipData := pkgZips[pkg]
-
-		reader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
-		if err != nil {
-			errMap[pkg] = err
-			continue
-		}
-
-		for _, file := range reader.File {
-			if !e.isRunning {
-				return nil, map[string]error{"module": detections.ErrModuleStopped}
-			}
-
-			if file.FileInfo().IsDir() || !acceptedExtensions[strings.ToLower(filepath.Ext(file.Name))] {
-				continue
-			}
-
-			f, err := file.Open()
-			if err != nil {
-				errMap[file.Name] = err
-				continue
-			}
-
-			data, err := io.ReadAll(f)
-			if err != nil {
-				f.Close()
-				errMap[file.Name] = err
-
-				continue
-			}
-
-			f.Close()
-
-			rule, err := ParseOsqueryRule(data)
-			if err != nil {
-				errMap[file.Name] = err
-				continue
-			}
-
-			det := rule.ToDetection(pkg, model.LicenseDRL, true)
-
-			detects = append(detects, det)
-		}
-	}
-
-	return detects, errMap
 }
 
 func (e *OsqueryEngine) parseRepoRules(allRepos []*detections.RepoOnDisk) (detects []*model.Detection, errMap map[string]error) {
@@ -1319,80 +1187,6 @@ func (e *OsqueryEngine) syncCommunityDetections(ctx context.Context, logger *log
 	}).Info("elastalert community diff")
 
 	return errMap, nil
-}
-
-func (e *OsqueryEngine) loadSigmaPackagesFromDisk() (zipData map[string][]byte, errMap map[string]error) {
-	errMap = map[string]error{} // map[pkgName]error
-	defer func() {
-		if len(errMap) == 0 {
-			errMap = nil
-		}
-	}()
-
-	zipData = map[string][]byte{}
-	stats := map[string]int{}
-
-	for _, pkg := range e.sigmaRulePackages {
-		filePath := filepath.Join(e.airgapBasePath, "sigma_"+pkg+".zip")
-
-		data, err := e.ReadFile(filePath)
-		if err != nil {
-			errMap[pkg] = err
-			continue
-		}
-
-		zipData[pkg] = data
-		stats[pkg] = len(data)
-	}
-
-	log.WithField("packageSizes", stats).Info("loaded sigma packages from disk")
-
-	return zipData, errMap
-}
-
-func (e *OsqueryEngine) downloadSigmaPackages() (zipData map[string][]byte, errMap map[string]error) {
-	errMap = map[string]error{} // map[pkgName]error
-	defer func() {
-		if len(errMap) == 0 {
-			errMap = nil
-		}
-	}()
-
-	stats := map[string]int{} // map[pkgName]fileSize
-	zipData = map[string][]byte{}
-
-	for _, pkg := range e.sigmaRulePackages {
-		download := fmt.Sprintf(e.sigmaPackageDownloadTemplate, pkg)
-
-		req, err := http.NewRequest(http.MethodGet, download, nil)
-		if err != nil {
-			errMap[pkg] = err
-			continue
-		}
-
-		resp, err := e.MakeRequest(req)
-		if err != nil {
-			errMap[pkg] = err
-			continue
-		}
-
-		if resp.StatusCode < 200 || resp.StatusCode > 299 {
-			errMap[pkg] = fmt.Errorf("non-200 status code during download: %d", resp.StatusCode)
-			continue
-		}
-
-		zipData[pkg], err = io.ReadAll(resp.Body)
-		if err != nil {
-			errMap[pkg] = err
-			continue
-		}
-
-		stats[pkg] = len(zipData[pkg])
-	}
-
-	log.WithField("downloadSizes", stats).Info("downloaded sigma packages")
-
-	return zipData, errMap
 }
 
 // IndexExistingRules maps the publicID of a detection to the path of the rule file.
