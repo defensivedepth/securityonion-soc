@@ -7,7 +7,6 @@ package osquery
 
 import (
 	"fmt"
-	"github.com/apex/log"
 	"strings"
 
 	"github.com/security-onion-solutions/securityonion-soc/model"
@@ -126,8 +125,6 @@ func ParseOsqueryRule(data []byte) (*OsqueryRule, error) {
 		return nil, err
 	}
 
-	log.Info("osquery22")
-
 	err = rule.Validate()
 	if err != nil {
 		return nil, err
@@ -139,7 +136,6 @@ func ParseOsqueryRule(data []byte) (*OsqueryRule, error) {
 func (e *OsqueryRule) Validate() error {
 	// check required fields
 	requiredFields := []string{}
-	log.Info("osquery23")
 
 	if e.ID == nil || len(*e.ID) == 0 {
 		requiredFields = append(requiredFields, "id")
@@ -188,13 +184,13 @@ func (r *OsqueryRule) ToDetection(ruleset string, license string, isCommunity bo
 
 	det := &model.Detection{
 		Author:      *r.Author,
-		Engine:      model.EngineNameElastAlert,
+		Engine:      model.EngineNameOsquery,
 		PublicID:    id,
 		Title:       r.Title,
 		Severity:    sev,
 		Content:     string(content),
 		IsCommunity: isCommunity,
-		Language:    model.SigLangSigma,
+		Language:    model.SigLangOsquery,
 		Ruleset:     ruleset,
 		License:     license,
 	}
