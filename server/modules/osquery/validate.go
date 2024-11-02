@@ -7,6 +7,7 @@ package osquery
 
 import (
 	"fmt"
+	"github.com/apex/log"
 	"strings"
 
 	"github.com/security-onion-solutions/securityonion-soc/model"
@@ -60,6 +61,9 @@ type OsqueryRule struct {
 	Fields      []string               `yaml:"fields,omitempty"`
 	Level       *SigmaLevel            `yaml:"level"`
 	License     *string                `yaml:"license,omitempty"`
+	Category    *string                `yaml:"category,omitempty"`
+	OS          []string               `yaml:"os,omitempty"`
+	SQL         *string                `yaml:"sql,omitempty"`
 	Rest        map[string]interface{} `yaml:",inline"`
 }
 
@@ -122,6 +126,8 @@ func ParseOsqueryRule(data []byte) (*OsqueryRule, error) {
 		return nil, err
 	}
 
+	log.Info("osquery22")
+
 	err = rule.Validate()
 	if err != nil {
 		return nil, err
@@ -133,6 +139,7 @@ func ParseOsqueryRule(data []byte) (*OsqueryRule, error) {
 func (e *OsqueryRule) Validate() error {
 	// check required fields
 	requiredFields := []string{}
+	log.Info("osquery23")
 
 	if e.ID == nil || len(*e.ID) == 0 {
 		requiredFields = append(requiredFields, "id")
@@ -142,12 +149,8 @@ func (e *OsqueryRule) Validate() error {
 		requiredFields = append(requiredFields, "title")
 	}
 
-	if e.LogSource == (LogSource{}) {
-		requiredFields = append(requiredFields, "logsource")
-	}
-
-	if len(e.Detection.Condition.Values) == 0 && e.Detection.Condition.Value == "" {
-		requiredFields = append(requiredFields, "detection.condition")
+	if e.SQL == nil || len(*e.SQL) == 0 {
+		requiredFields = append(requiredFields, "sql")
 	}
 
 	if len(requiredFields) > 0 {

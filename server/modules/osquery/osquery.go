@@ -148,7 +148,6 @@ func (e *OsqueryEngine) GetState() *model.EngineState {
 }
 
 func (e *OsqueryEngine) Init(config module.ModuleConfig) (err error) {
-	log.WithField("detectionEngine", "Test55").Info("Initializing OsqueryEngine")
 	e.SyncThread = &sync.WaitGroup{}
 	e.InterruptChan = make(chan bool, 1)
 	e.IntegrityCheckerData.Thread = &sync.WaitGroup{}
@@ -192,8 +191,6 @@ func (e *OsqueryEngine) Start() error {
 	e.IntegrityCheckerData.IsRunning = true
 
 	// start long running processes
-	log.WithField("detectionEngine", "Test").Info("Initializing OsqueryEngine")
-
 	go detections.SyncScheduler(e, &e.SyncSchedulerParams, &e.EngineState, model.EngineNameOsquery, &e.isRunning, e.IOManager)
 	go detections.IntegrityChecker(model.EngineNameOsquery, e, &e.IntegrityCheckerData, &e.EngineState.IntegrityFailure)
 
@@ -777,7 +774,7 @@ func (e *OsqueryEngine) syncCommunityDetections(ctx context.Context, logger *log
 			path = index[detect.Title]
 		}
 
-		// 1. Save sigma Detection to ElasticSearch
+		// 1. Save osquery Detection to ElasticSearch
 		orig, exists := community[detect.PublicID]
 		if exists {
 			detect.IsEnabled = orig.IsEnabled
@@ -806,7 +803,7 @@ func (e *OsqueryEngine) syncCommunityDetections(ctx context.Context, logger *log
 				logger.WithFields(log.Fields{
 					"rule.uuid": detect.PublicID,
 					"rule.name": detect.Title,
-				}).Info("updating Sigma detection")
+				}).Info("updating Osquery detection")
 
 				err = bulk.Add(ctx, esutil.BulkIndexerItem{
 					Index:      index,
@@ -861,7 +858,7 @@ func (e *OsqueryEngine) syncCommunityDetections(ctx context.Context, logger *log
 			logger.WithFields(log.Fields{
 				"rule.uuid": detect.PublicID,
 				"rule.name": detect.Title,
-			}).Info("creating new Sigma detection")
+			}).Info("creating new Osquery detection")
 
 			err = bulk.Add(ctx, esutil.BulkIndexerItem{
 				Index:  index,
