@@ -92,6 +92,7 @@ var (
 		SigLangSigma:    {},
 		SigLangSuricata: {},
 		SigLangYara:     {},
+		SigLangOsquery:  {},
 	}
 
 	ErrUnsupportedEngine   = errors.New("unsupported engine")
