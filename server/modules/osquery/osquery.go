@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/md5"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -81,13 +80,11 @@ type OsqueryEngine struct {
 	srv                                *server.Server
 	airgapBasePath                     string
 	failAfterConsecutiveErrorCount     int
-	sigmaPackageDownloadTemplate       string
 	elastAlertRulesFolder              string
 	rulesFingerprintFile               string
 	sigmaPipelineFinal                 string
 	sigmaPipelineSO                    string
 	sigmaPipelinesFingerprintFile      string
-	sigmaRulePackages                  []string
 	autoEnabledSigmaRules              []string
 	additionalAlerters                 []string
 	additionalAlerterParams            string
