@@ -187,9 +187,6 @@ func (e *OsqueryEngine) Init(config module.ModuleConfig) (err error) {
 
 	e.IntegrityCheckerData.FrequencySeconds = module.GetIntDefault(config, "integrityCheckFrequencySeconds", DEFAULT_INTEGRITY_CHECK_FREQUENCY_SECONDS)
 
-	pkgs := module.GetStringArrayDefault(config, "sigmaRulePackages", []string{"core", "emerging_threats_addon"})
-	e.parseSigmaPackages(pkgs)
-
 	e.reposFolder = module.GetStringDefault(config, "reposFolder", DEFAULT_REPOS_FOLDER)
 	e.rulesRepos, err = model.GetReposDefault(config, "rulesRepos", DEFAULT_RULES_REPOS)
 	if err != nil {
@@ -218,8 +215,9 @@ func (e *OsqueryEngine) Start() error {
 	e.IntegrityCheckerData.IsRunning = true
 
 	// start long running processes
+	log.WithField("detectionEngine", "osquery55")
 	go detections.SyncScheduler(e, &e.SyncSchedulerParams, &e.EngineState, model.EngineNameOsquery, &e.isRunning, e.IOManager)
-	//go detections.IntegrityChecker(model.EngineNameOsquery, e, &e.IntegrityCheckerData, &e.EngineState.IntegrityFailure)
+	go detections.IntegrityChecker(model.EngineNameOsquery, e, &e.IntegrityCheckerData, &e.EngineState.IntegrityFailure)
 
 	// update Ai Summaries once and don't block
 	if e.showAiSummaries {
@@ -714,45 +712,6 @@ func (e *OsqueryEngine) Sync(logger *log.Entry, forceSync bool) error {
 	}
 
 	return nil
-}
-
-func (e *OsqueryEngine) checkSigmaPipelines() (bool, string, error) {
-	// Hash the pipeline files
-	hashFinal, err := e.hashFile(e.sigmaPipelineFinal)
-	if err != nil {
-		return false, "", fmt.Errorf("error hashing file %s: %w", e.sigmaPipelineFinal, err)
-	}
-	hashSO, err := e.hashFile(e.sigmaPipelineSO)
-	if err != nil {
-		return false, "", fmt.Errorf("error hashing file %s: %w", e.sigmaPipelineSO, err)
-	}
-	newHash := hashFinal + "-" + hashSO
-
-	// Read the existing hash from the fingerprint file
-	oldHash, err := e.ReadFile(e.sigmaPipelinesFingerprintFile)
-	if err != nil && !os.IsNotExist(err) {
-		return false, "", fmt.Errorf("error reading fingerprint file: %w", err)
-	}
-
-	// Compare hashes
-	if string(oldHash) == newHash {
-		log.Info("no changes to sigma processing pipeline")
-		return false, "", nil
-	}
-
-	// If hashes do not match, the elastalert rules need to be regenerated
-	log.Info("changes detected in sigma processing pipelines")
-
-	return true, newHash, nil
-}
-
-func (e *OsqueryEngine) hashFile(filePath string) (string, error) {
-	data, err := e.ReadFile(filePath)
-	if err != nil {
-		return "", err
-	}
-	hash := sha256.Sum256(data)
-	return hex.EncodeToString(hash[:]), nil
 }
 
 func (e *OsqueryEngine) parseRepoRules(allRepos []*detections.RepoOnDisk) (detects []*model.Detection, errMap map[string]error) {
