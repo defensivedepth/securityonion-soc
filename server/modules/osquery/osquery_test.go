@@ -10,18 +10,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
 	"os/exec"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/security-onion-solutions/securityonion-soc/licensing"
 	"github.com/security-onion-solutions/securityonion-soc/model"
 	"github.com/security-onion-solutions/securityonion-soc/module"
 	"github.com/security-onion-solutions/securityonion-soc/server"
@@ -40,7 +37,7 @@ import (
 )
 
 func TestCheckAutoEnabledSigmaRule(t *testing.T) {
-	e := &ElastAlertEngine{
+	e := &OsqueryEngine{
 		autoEnabledSigmaRules: []string{"securityonion-resources+high", "core+critical"},
 	}
 
@@ -75,7 +72,7 @@ func TestElastAlertModule(t *testing.T) {
 	srv := &server.Server{
 		DetectionEngines: map[model.EngineName]server.DetectionEngine{},
 	}
-	mod := NewElastAlertEngine(srv)
+	mod := NewOsqueryEngine(srv)
 
 	assert.Implements(t, (*module.Module)(nil), mod)
 	assert.Implements(t, (*server.DetectionEngine)(nil), mod)
@@ -95,63 +92,6 @@ func TestElastAlertModule(t *testing.T) {
 
 	assert.Equal(t, 1, len(srv.DetectionEngines))
 	assert.Same(t, mod, srv.DetectionEngines[model.EngineNameElastAlert])
-}
-
-func TestParseSigmaPackages(t *testing.T) {
-	t.Parallel()
-
-	table := []struct {
-		Name     string
-		Input    []string
-		Expected []string
-	}{
-		{
-			Name:     "Simple Sunny Day Path",
-			Input:    []string{"core"},
-			Expected: []string{"core"},
-		},
-		{
-			Name:     "Multiple Packages",
-			Input:    []string{"core+", "emerging_threats"},
-			Expected: []string{"core+", "emerging_threats_addon"},
-		},
-		{
-			Name:     "Rename (all => all_rules)",
-			Input:    []string{"all"},
-			Expected: []string{"all_rules"},
-		},
-		{
-			Name:     "Rename (emerging_threats_addon => emerging_threats)",
-			Input:    []string{"emerging_threats"},
-			Expected: []string{"emerging_threats_addon"},
-		},
-		{
-			Name:     "Normalize",
-			Input:    []string{"CoRe++"},
-			Expected: []string{"core++"},
-		},
-		{
-			Name:     "Account For Nesting Packages",
-			Input:    []string{"core", "core+", "core++", "all_rules", "emerging_threats"},
-			Expected: []string{"all_rules"},
-		},
-	}
-
-	for _, tt := range table {
-		tt := tt
-		t.Run(tt.Name, func(t *testing.T) {
-			t.Parallel()
-
-			engine := ElastAlertEngine{}
-
-			engine.parseSigmaPackages(tt.Input)
-
-			sort.Strings(engine.sigmaRulePackages)
-			sort.Strings(tt.Expected)
-
-			assert.Equal(t, tt.Expected, engine.sigmaRulePackages)
-		})
-	}
 }
 
 func TestTimeFrame(t *testing.T) {
@@ -241,605 +181,6 @@ func TestTimeFrame(t *testing.T) {
 	assert.Equal(t, 1, *tf.Weeks)
 }
 
-func TestCheckSigmaPipelines(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	iom := mock.NewMockIOManager(ctrl)
-
-	e := &ElastAlertEngine{
-		sigmaPipelineFinal:            "/opt/sensoroni/sigma_final_pipeline.yaml",
-		sigmaPipelineSO:               "/opt/sensoroni/sigma_so_pipeline.yaml",
-		sigmaPipelinesFingerprintFile: "/opt/sensoroni/fingerprints/sigma.pipelines.fingerprint",
-		IOManager:                     iom,
-	}
-
-	testList := []struct {
-		name           string
-		setupMock      func()
-		expectedChange bool
-		expectedHash   string
-		expectedErr    error
-	}{
-		{
-			name: "No changes in pipelines",
-			setupMock: func() {
-				// Setup the hash values to be the same
-				iom.EXPECT().ReadFile("/opt/sensoroni/sigma_final_pipeline.yaml").Return([]byte("data"), nil)
-				iom.EXPECT().ReadFile("/opt/sensoroni/sigma_so_pipeline.yaml").Return([]byte("data"), nil)
-				hash := "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7-3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7"
-				iom.EXPECT().ReadFile("/opt/sensoroni/fingerprints/sigma.pipelines.fingerprint").Return([]byte(hash), nil)
-			},
-			expectedChange: false,
-			expectedHash:   "",
-			expectedErr:    nil,
-		},
-		{
-			name: "Changes detected in pipelines",
-			setupMock: func() {
-				// Setup the hash values to be different
-				iom.EXPECT().ReadFile("/opt/sensoroni/sigma_final_pipeline.yaml").Return([]byte("data1"), nil)
-				iom.EXPECT().ReadFile("/opt/sensoroni/sigma_so_pipeline.yaml").Return([]byte("data2"), nil)
-				hash := "7c563a27ed29beba2a5e9fd515c0b4435065d7c90af52b29a7f96f1ba2f00d7b-6d8758d5149c097c5131dd1355b7b8891b2b207384ff8f66a650537c3d2ffd6f"
-				iom.EXPECT().ReadFile("/opt/sensoroni/fingerprints/sigma.pipelines.fingerprint").Return([]byte(hash), nil)
-			},
-			expectedChange: true,
-			expectedHash:   "5b41362bc82b7f3d56edc5a306db22105707d01ff4819e26faef9724a2d406c9-d98cf53e0c8b77c14a96358d5b69584225b4bb9026423cbc2f7b0161894c402c",
-			expectedErr:    nil,
-		},
-		{
-			name: "Error reading final pipeline file",
-			setupMock: func() {
-				iom.EXPECT().ReadFile("/opt/sensoroni/sigma_final_pipeline.yaml").Return(nil, errors.New("file read error"))
-			},
-			expectedChange: false,
-			expectedHash:   "",
-			expectedErr:    fmt.Errorf("error hashing file /opt/sensoroni/sigma_final_pipeline.yaml: file read error"),
-		},
-	}
-
-	for _, tt := range testList {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.setupMock()
-			regenNeeded, updatedHash, err := e.checkSigmaPipelines()
-			if tt.expectedErr != nil {
-				assert.Error(t, err)
-				assert.Equal(t, tt.expectedErr.Error(), err.Error())
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedChange, regenNeeded)
-				assert.Equal(t, tt.expectedHash, updatedHash)
-			}
-		})
-	}
-}
-
-func TestSigmaToElastAlertSunnyDay(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	iom := mock.NewMockIOManager(ctrl)
-
-	iom.EXPECT().ExecCommand(gomock.Cond(func(x any) bool {
-		cmd := x.(*exec.Cmd)
-
-		if !strings.HasSuffix(cmd.Path, "sigma") {
-			return false
-		}
-
-		if !slices.Contains(cmd.Args, "convert") {
-			return false
-		}
-
-		if cmd.Stdin == nil {
-			return false
-		}
-
-		return true
-	})).Return([]byte("<eql>"), 0, time.Duration(0), nil)
-
-	engine := ElastAlertEngine{
-		IOManager:          iom,
-		additionalAlerters: []string{"email", "slack"},
-	}
-
-	det := &model.Detection{
-		PublicID: "00000000-0000-0000-0000-000000000000",
-		Content:  `{"detection": {"condition": "*"}}`,
-		Title:    "Test Detection",
-		Severity: model.SeverityHigh,
-		Overrides: []*model.Override{
-			{
-				Type:      model.OverrideTypeCustomFilter,
-				IsEnabled: true,
-				OverrideParameters: model.OverrideParameters{
-					CustomFilter: util.Ptr(`{"this": ["that"]}`),
-				},
-			},
-		},
-	}
-
-	query, err := engine.sigmaToElastAlert(context.Background(), det)
-	assert.NoError(t, err)
-
-	// No license
-	wrappedRule, err := engine.wrapRule(det, query)
-	assert.NoError(t, err)
-
-	expected := `detection_title: Test Detection
-detection_public_id: 00000000-0000-0000-0000-000000000000
-event.module: sigma
-event.dataset: sigma.alert
-event.severity: 4
-sigma_level: high
-alert:
-    - modules.so.securityonion-es.SecurityOnionESAlerter
-index: .ds-logs-*
-name: Test Detection -- 00000000-0000-0000-0000-000000000000
-realert:
-    seconds: 0
-type: any
-filter:
-    - eql: <eql>
-`
-	assert.YAMLEq(t, expected, wrappedRule)
-}
-
-func TestSigmaToElastAlertSunnyDayLicensed(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	iom := mock.NewMockIOManager(ctrl)
-
-	iom.EXPECT().ExecCommand(gomock.Cond(func(x any) bool {
-		cmd := x.(*exec.Cmd)
-
-		if !strings.HasSuffix(cmd.Path, "sigma") {
-			return false
-		}
-
-		if !slices.Contains(cmd.Args, "convert") {
-			return false
-		}
-
-		if cmd.Stdin == nil {
-			return false
-		}
-
-		return true
-	})).Return([]byte("<eql>"), 0, time.Duration(0), nil)
-
-	engine := ElastAlertEngine{
-		IOManager:               iom,
-		additionalAlerters:      []string{"email", "slack"},
-		additionalAlerterParams: "foo: bar",
-	}
-
-	det := &model.Detection{
-		PublicID: "00000000-0000-0000-0000-000000000000",
-		Content:  "totally good sigma",
-		Title:    "Test Detection",
-		Severity: model.SeverityHigh,
-	}
-
-	query, err := engine.sigmaToElastAlert(context.Background(), det)
-	assert.NoError(t, err)
-
-	// License
-	defer licensing.Shutdown()
-	licensing.Test(licensing.FEAT_NTF, 0, 0, "", "")
-	wrappedRule, err := engine.wrapRule(det, query)
-	assert.NoError(t, err)
-
-	expected := `detection_title: Test Detection
-detection_public_id: 00000000-0000-0000-0000-000000000000
-event.module: sigma
-event.dataset: sigma.alert
-event.severity: 4
-sigma_level: high
-alert:
-    - modules.so.securityonion-es.SecurityOnionESAlerter
-    - email
-    - slack
-index: .ds-logs-*
-name: Test Detection -- 00000000-0000-0000-0000-000000000000
-type: any
-realert:
-    seconds: 0
-filter:
-    - eql: <eql>
-foo: bar
-`
-	assert.YAMLEq(t, expected, wrappedRule)
-}
-
-func TestSigmaToElastAlertCustomNotificationLicensed(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	iom := mock.NewMockIOManager(ctrl)
-
-	iom.EXPECT().ExecCommand(gomock.Cond(func(x any) bool {
-		cmd := x.(*exec.Cmd)
-
-		if !strings.HasSuffix(cmd.Path, "sigma") {
-			return false
-		}
-
-		if !slices.Contains(cmd.Args, "convert") {
-			return false
-		}
-
-		if cmd.Stdin == nil {
-			return false
-		}
-
-		return true
-	})).Return([]byte("<eql>"), 0, time.Duration(0), nil)
-
-	config := make(map[string]interface{})
-	config["MyAlerters"] = "post2"
-	config["MyParams"] = "foo: car"
-
-	engine := ElastAlertEngine{
-		IOManager:               iom,
-		additionalAlerters:      []string{"email", "slack"},
-		additionalAlerterParams: "foo: bar",
-		customAlerters:          &config,
-	}
-
-	det := &model.Detection{
-		PublicID: "00000000-0000-0000-0000-000000000000",
-		Content: `
-title: Test Detection
-id: 00000000-0000-0000-0000-000000000000
-logsource:
-    product: linux
-    service: auth
-detection:
-    selection:
-        event.outcome: failure
-        process.name: sshd
-        tags|contains: so-grid-node
-    filter:
-        system.auth.ssh.method: '*'
-    condition: selection and not filter
-tags:
-- so.alerters.MyAlerters
-- so.params.MyParams
-`,
-		Title:    "Test Detection",
-		Severity: model.SeverityHigh,
-	}
-
-	query, err := engine.sigmaToElastAlert(context.Background(), det)
-	assert.NoError(t, err)
-
-	// License
-	defer licensing.Shutdown()
-	licensing.Test(licensing.FEAT_NTF, 0, 0, "", "")
-	wrappedRule, err := engine.wrapRule(det, query)
-	assert.NoError(t, err)
-
-	expected := `detection_title: Test Detection
-detection_public_id: 00000000-0000-0000-0000-000000000000
-event.module: sigma
-event.dataset: sigma.alert
-event.severity: 4
-sigma_level: high
-alert:
-    - modules.so.securityonion-es.SecurityOnionESAlerter
-    - post2
-index: .ds-logs-*
-name: Test Detection -- 00000000-0000-0000-0000-000000000000
-type: any
-realert:
-    seconds: 0
-filter:
-    - eql: <eql>
-foo: car
-`
-	assert.YAMLEq(t, expected, wrappedRule)
-}
-
-func TestSigmaToElastAlertCustomNotificationUnlicensed(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	iom := mock.NewMockIOManager(ctrl)
-
-	iom.EXPECT().ExecCommand(gomock.Cond(func(x any) bool {
-		cmd := x.(*exec.Cmd)
-
-		if !strings.HasSuffix(cmd.Path, "sigma") {
-			return false
-		}
-
-		if !slices.Contains(cmd.Args, "convert") {
-			return false
-		}
-
-		if cmd.Stdin == nil {
-			return false
-		}
-
-		return true
-	})).Return([]byte("<eql>"), 0, time.Duration(0), nil)
-
-	config := make(map[string]interface{})
-	config["MyAlerters"] = "post2"
-	config["MyParams"] = "foo: car"
-
-	engine := ElastAlertEngine{
-		IOManager:               iom,
-		additionalAlerters:      []string{"email", "slack"},
-		additionalAlerterParams: "foo: bar",
-		customAlerters:          &config,
-	}
-
-	det := &model.Detection{
-		PublicID: "00000000-0000-0000-0000-000000000000",
-		Content: `
-title: Test Detection
-id: 00000000-0000-0000-0000-000000000000
-logsource:
-    product: linux
-    service: auth
-detection:
-    selection:
-        event.outcome: failure
-        process.name: sshd
-        tags|contains: so-grid-node
-    filter:
-        system.auth.ssh.method: '*'
-    condition: selection and not filter
-tags:
-- so.alerters.MyAlerters
-- so.params.MyParams
-`,
-		Title:    "Test Detection",
-		Severity: model.SeverityHigh,
-	}
-
-	query, err := engine.sigmaToElastAlert(context.Background(), det)
-	assert.NoError(t, err)
-
-	wrappedRule, err := engine.wrapRule(det, query)
-	assert.NoError(t, err)
-
-	expected := `detection_title: Test Detection
-detection_public_id: 00000000-0000-0000-0000-000000000000
-event.module: sigma
-event.dataset: sigma.alert
-event.severity: 4
-sigma_level: high
-alert:
-    - modules.so.securityonion-es.SecurityOnionESAlerter
-index: .ds-logs-*
-name: Test Detection -- 00000000-0000-0000-0000-000000000000
-type: any
-realert:
-    seconds: 0
-filter:
-    - eql: <eql>
-`
-	assert.YAMLEq(t, expected, wrappedRule)
-}
-
-func TestSigmaToElastAlertNotificationOnlyLicensed(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	iom := mock.NewMockIOManager(ctrl)
-
-	iom.EXPECT().ExecCommand(gomock.Cond(func(x any) bool {
-		cmd := x.(*exec.Cmd)
-
-		if !strings.HasSuffix(cmd.Path, "sigma") {
-			return false
-		}
-
-		if !slices.Contains(cmd.Args, "convert") {
-			return false
-		}
-
-		if cmd.Stdin == nil {
-			return false
-		}
-
-		return true
-	})).Return([]byte("<eql>"), 0, time.Duration(0), nil)
-
-	engine := ElastAlertEngine{
-		IOManager:               iom,
-		additionalAlerters:      []string{"email", "slack"},
-		additionalAlerterParams: "foo: bar",
-	}
-
-	det := &model.Detection{
-		PublicID: "00000000-0000-0000-0000-000000000000",
-		Content: `
-title: Test Detection
-id: 00000000-0000-0000-0000-000000000000
-logsource:
-    product: linux
-    service: auth
-detection:
-    selection:
-        event.outcome: failure
-        process.name: sshd
-        tags|contains: so-grid-node
-    filter:
-        system.auth.ssh.method: '*'
-    condition: selection and not filter
-tags:
-- so.notification
-`,
-		Title:    "Test Detection",
-		Severity: model.SeverityHigh,
-	}
-
-	query, err := engine.sigmaToElastAlert(context.Background(), det)
-	assert.NoError(t, err)
-
-	// License
-	defer licensing.Shutdown()
-	licensing.Test(licensing.FEAT_NTF, 0, 0, "", "")
-	wrappedRule, err := engine.wrapRule(det, query)
-	assert.NoError(t, err)
-
-	expected := `detection_title: Test Detection
-detection_public_id: 00000000-0000-0000-0000-000000000000
-event.module: sigma
-event.dataset: sigma.alert
-event.severity: 4
-sigma_level: high
-alert:
-    - email
-    - slack
-index: .ds-logs-*
-name: Test Detection -- 00000000-0000-0000-0000-000000000000
-type: any
-realert:
-    seconds: 0
-filter:
-    - eql: <eql>
-foo: bar
-`
-	assert.YAMLEq(t, expected, wrappedRule)
-}
-
-func TestSigmaToElastAlertNotificationOnlyUnlicensed(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	iom := mock.NewMockIOManager(ctrl)
-
-	iom.EXPECT().ExecCommand(gomock.Cond(func(x any) bool {
-		cmd := x.(*exec.Cmd)
-
-		if !strings.HasSuffix(cmd.Path, "sigma") {
-			return false
-		}
-
-		if !slices.Contains(cmd.Args, "convert") {
-			return false
-		}
-
-		if cmd.Stdin == nil {
-			return false
-		}
-
-		return true
-	})).Return([]byte("<eql>"), 0, time.Duration(0), nil)
-
-	engine := ElastAlertEngine{
-		IOManager:               iom,
-		additionalAlerters:      []string{"email", "slack"},
-		additionalAlerterParams: "foo: bar",
-	}
-
-	det := &model.Detection{
-		PublicID: "00000000-0000-0000-0000-000000000000",
-		Content: `
-title: Test Detection
-id: 00000000-0000-0000-0000-000000000000
-logsource:
-    product: linux
-    service: auth
-detection:
-    selection:
-        event.outcome: failure
-        process.name: sshd
-        tags|contains: so-grid-node
-    filter:
-        system.auth.ssh.method: '*'
-    condition: selection and not filter
-tags:
-- so.notification
-`,
-		Title:    "Test Detection",
-		Severity: model.SeverityHigh,
-	}
-
-	query, err := engine.sigmaToElastAlert(context.Background(), det)
-	assert.NoError(t, err)
-
-	wrappedRule, err := engine.wrapRule(det, query)
-	assert.NoError(t, err)
-
-	expected := `detection_title: Test Detection
-detection_public_id: 00000000-0000-0000-0000-000000000000
-event.module: sigma
-event.dataset: sigma.alert
-event.severity: 4
-sigma_level: high
-alert: []
-index: .ds-logs-*
-name: Test Detection -- 00000000-0000-0000-0000-000000000000
-type: any
-realert:
-    seconds: 0
-filter:
-    - eql: <eql>
-is_enabled: False
-`
-	assert.YAMLEq(t, expected, wrappedRule)
-}
-
-func TestAdditionalAlertersSev0(t *testing.T) {
-	engine := ElastAlertEngine{
-		additionalAlerters:      []string{"email", "slack"},
-		additionalAlerterParams: "foo: bar",
-	}
-
-	for sev := range 6 {
-		alerters, params := engine.getAdditionalAlerters(sev)
-		assert.Equal(t, []string{"email", "slack"}, alerters)
-		assert.Equal(t, "foo: bar", params)
-	}
-}
-
-func TestAdditionalAlertersSev0Sev3(t *testing.T) {
-	engine := ElastAlertEngine{
-		additionalAlerters:          []string{"email", "slack"},
-		additionalAlerterParams:     "foo: bar",
-		mediumSeverityAlerters:      []string{"teams"},
-		mediumSeverityAlerterParams: "foo: boo",
-	}
-
-	for sev := range 6 {
-		alerters, params := engine.getAdditionalAlerters(sev)
-		if sev < 3 {
-			assert.Equal(t, []string{"email", "slack"}, alerters)
-			assert.Equal(t, "foo: bar", params)
-		} else {
-			assert.Equal(t, []string{"teams"}, alerters)
-			assert.Equal(t, "foo: boo", params)
-		}
-	}
-}
-
-func TestAdditionalAlertersSev0Sev5(t *testing.T) {
-	engine := ElastAlertEngine{
-		additionalAlerters:            []string{"email", "slack"},
-		additionalAlerterParams:       "foo: bar",
-		criticalSeverityAlerters:      []string{"teams"},
-		criticalSeverityAlerterParams: "foo: boo",
-	}
-
-	for sev := range 6 {
-		alerters, params := engine.getAdditionalAlerters(sev)
-		if sev < 5 {
-			assert.Equal(t, []string{"email", "slack"}, alerters)
-			assert.Equal(t, "foo: bar", params)
-		} else {
-			assert.Equal(t, []string{"teams"}, alerters)
-			assert.Equal(t, "foo: boo", params)
-		}
-	}
-}
-
 func TestSigmaToElastAlertError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -864,7 +205,7 @@ func TestSigmaToElastAlertError(t *testing.T) {
 		return true
 	})).Return([]byte("Error: something went wrong"), 1, time.Duration(0), errors.New("non-zero return"))
 
-	engine := ElastAlertEngine{
+	engine := OsqueryEngine{
 		IOManager: iom,
 	}
 
@@ -881,92 +222,6 @@ func TestSigmaToElastAlertError(t *testing.T) {
 	assert.Empty(t, query)
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "problem with sigma cli")
-}
-
-func TestParseZipRules(t *testing.T) {
-	t.Parallel()
-
-	data := `title: Always Alert
-id: 00000000-0000-0000-0000-00000000
-status: experimental
-description: Always Alerts
-author: Corey Ogburn
-date: 2023/11/03
-modified: 2023/11/03
-logsource:
-    product: windows
-detection:
-    filter:
-        event.module: zeek
-    condition: filter
-level: high
-`
-
-	buf := bytes.NewBuffer([]byte{})
-
-	writer := zip.NewWriter(buf)
-	aa, err := writer.Create("rules/always_alert.yml")
-	assert.NoError(t, err)
-
-	_, err = aa.Write([]byte(data))
-	assert.NoError(t, err)
-
-	bad, err := writer.Create("rules/bad.yml")
-	assert.NoError(t, err)
-
-	_, err = bad.Write([]byte("bad data"))
-	assert.NoError(t, err)
-
-	denied, err := writer.Create("rules/deny.yml")
-	assert.NoError(t, err)
-
-	_, err = denied.Write([]byte("deny"))
-	assert.NoError(t, err)
-
-	allowThenDeny, err := writer.Create("rules/eventually_deny.yml")
-	assert.NoError(t, err)
-
-	_, err = allowThenDeny.Write([]byte("00000000-0000-0000-0000-00000000 deny"))
-	assert.NoError(t, err)
-
-	matchesNeither, err := writer.Create("rules/not_allowed.yml")
-	assert.NoError(t, err)
-
-	_, err = matchesNeither.Write([]byte("123"))
-	assert.NoError(t, err)
-
-	err = writer.Close()
-	assert.NoError(t, err)
-
-	pkgZips := map[string][]byte{
-		"all_rules": buf.Bytes(),
-	}
-
-	engine := ElastAlertEngine{
-		isRunning:         true,
-		sigmaRulePackages: []string{"all_rules"},
-	}
-
-	expected := &model.Detection{
-		Author:      "Corey Ogburn",
-		PublicID:    "00000000-0000-0000-0000-00000000",
-		Title:       "Always Alert",
-		Severity:    model.SeverityHigh,
-		Content:     data,
-		Description: "Always Alerts",
-		Product:     "windows",
-		IsCommunity: true,
-		Engine:      model.EngineNameElastAlert,
-		Language:    model.SigLangSigma,
-		Ruleset:     "all_rules",
-		License:     model.LicenseDRL,
-	}
-
-	dets, errMap := engine.parseZipRules(pkgZips)
-	assert.NotNil(t, errMap)
-	assert.Error(t, errMap["rules/bad.yml"])
-	assert.Len(t, dets, 1)
-	assert.Equal(t, expected, dets[0])
 }
 
 func TestParseRepoRules(t *testing.T) {
@@ -1010,7 +265,7 @@ license: Elastic-2.0
 	})
 	iom.EXPECT().ReadFile(gomock.Eq("rules/so_soc_failed_login.yml")).Return([]byte(data), nil)
 
-	engine := ElastAlertEngine{
+	engine := OsqueryEngine{
 		isRunning: true,
 		IOManager: iom,
 	}
@@ -1035,88 +290,6 @@ license: Elastic-2.0
 	assert.Nil(t, errMap)
 	assert.Len(t, dets, 1)
 	assert.Equal(t, expected, dets[0])
-}
-
-func TestDownloadSigmaPackages(t *testing.T) {
-	t.Parallel()
-
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	iom := mock.NewMockIOManager(ctrl)
-	body := "data"
-
-	for i := 0; i < 5; i++ {
-		// can't use mock's Times(x) because the first response's body
-		// closing will result in remaining requests getting 0 data
-		iom.EXPECT().MakeRequest(gomock.Any()).Return(&http.Response{
-			StatusCode:    http.StatusOK,
-			Body:          io.NopCloser(strings.NewReader(body)),
-			ContentLength: int64(len(body)),
-		}, nil)
-	}
-
-	iom.EXPECT().MakeRequest(gomock.Any()).Return(&http.Response{
-		StatusCode: http.StatusNotFound,
-	}, nil)
-
-	pkgs := []string{"core", "core+", "core++", "emerging_threats_addon", "all_rules", "fake"}
-
-	engine := ElastAlertEngine{
-		sigmaRulePackages:            pkgs,
-		sigmaPackageDownloadTemplate: "localhost:3000/%s.zip",
-		IOManager:                    iom,
-	}
-
-	pkgZips, errMap := engine.downloadSigmaPackages()
-	assert.NotNil(t, errMap)
-	assert.Error(t, errMap["fake"])
-	assert.Len(t, pkgZips, len(pkgs)-1)
-
-	for _, pkg := range pkgs[:len(pkgs)-1] {
-		assert.Equal(t, []byte(body), pkgZips[pkg])
-	}
-}
-
-func TestLoadSigmaPackagesFromDisks(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	iom := mock.NewMockIOManager(ctrl)
-	airgapBasePath := "/nsm/rules/detect-sigma/rulesets/"
-
-	// List of packages to be loaded from disk
-	pkgs := []string{"core", "core+", "core++", "emerging_threats_addon", "all_rules", "fake"}
-
-	// Setting up mocks for each expected file read, except for the "fake" package to simulate an error
-	for _, pkg := range pkgs[:len(pkgs)-1] {
-		expectedFilePath := airgapBasePath + "sigma_" + pkg + ".zip"
-		iom.EXPECT().ReadFile(expectedFilePath).Return([]byte("mocked data for "+pkg), nil)
-	}
-
-	// Simulating an error for the 'fake' package
-	fakeFilePath := airgapBasePath + "sigma_fake.zip"
-	iom.EXPECT().ReadFile(fakeFilePath).Return(nil, errors.New("file not found"))
-
-	engine := ElastAlertEngine{
-		sigmaRulePackages: pkgs,
-		airgapBasePath:    airgapBasePath,
-		IOManager:         iom,
-	}
-
-	zipData, errMap := engine.loadSigmaPackagesFromDisk()
-
-	// Assertions
-	assert.NotNil(t, errMap, "Expected error map to not be nil")
-	assert.Error(t, errMap["fake"], "Expected an error for 'fake' package")
-	assert.Nil(t, errMap["core"], "No error expected for 'core' package")
-	assert.Len(t, zipData, len(pkgs)-1, "Expect one less entry in zipData due to the 'fake' package error")
-
-	// Verify that the content for each successful load is as expected
-	for _, pkg := range pkgs[:len(pkgs)-1] {
-		expectedContent := []byte("mocked data for " + pkg)
-		assert.Equal(t, expectedContent, zipData[pkg], "Expect the content to match the mocked content for package: "+pkg)
-	}
 }
 
 const (
@@ -1224,7 +397,7 @@ func TestSyncElastAlert(t *testing.T) {
 	table := []struct {
 		Name           string
 		Detections     []*model.Detection
-		InitMock       func(*ElastAlertEngine, *mock.MockIOManager)
+		InitMock       func(*OsqueryEngine, *mock.MockIOManager)
 		ExpectedErr    error
 		ExpectedErrMap map[string]string
 	}{
@@ -1239,7 +412,7 @@ func TestSyncElastAlert(t *testing.T) {
 					Severity:  model.SeverityMedium,
 				},
 			},
-			InitMock: func(mod *ElastAlertEngine, m *mock.MockIOManager) {
+			InitMock: func(mod *OsqueryEngine, m *mock.MockIOManager) {
 				// IndexExistingRules
 				m.EXPECT().ReadDir(mod.elastAlertRulesFolder).Return([]fs.DirEntry{}, nil)
 				// sigmaToElastAlert
@@ -1256,7 +429,7 @@ func TestSyncElastAlert(t *testing.T) {
 					IsEnabled: false,
 				},
 			},
-			InitMock: func(mod *ElastAlertEngine, m *mock.MockIOManager) {
+			InitMock: func(mod *OsqueryEngine, m *mock.MockIOManager) {
 				// IndexExistingRules
 				filename := SimpleRuleSID + ".yml"
 				m.EXPECT().ReadDir(mod.elastAlertRulesFolder).Return([]fs.DirEntry{
@@ -1300,7 +473,7 @@ sofilter_hosts:
 					},
 				},
 			},
-			InitMock: func(mod *ElastAlertEngine, m *mock.MockIOManager) {
+			InitMock: func(mod *OsqueryEngine, m *mock.MockIOManager) {
 				// IndexExistingRules
 				m.EXPECT().ReadDir(mod.elastAlertRulesFolder).Return([]fs.DirEntry{}, nil)
 				// sigmaToElastAlert
@@ -1323,7 +496,7 @@ sofilter_hosts:
 
 			mockIO := mock.NewMockIOManager(ctrl)
 
-			mod := NewElastAlertEngine(&server.Server{
+			mod := NewOsqueryEngine(&server.Server{
 				DetectionEngines: map[model.EngineName]server.DetectionEngine{},
 			})
 
@@ -1374,7 +547,7 @@ func TestExtractDetails(t *testing.T) {
 		},
 	}
 
-	eng := &ElastAlertEngine{}
+	eng := &OsqueryEngine{}
 
 	for _, test := range table {
 		test := test
@@ -1422,7 +595,7 @@ func TestGetDeployedPublicIds(t *testing.T) {
 		},
 	}, nil)
 
-	eng := &ElastAlertEngine{
+	eng := &OsqueryEngine{
 		elastAlertRulesFolder: path,
 		IOManager:             iom,
 	}
@@ -1444,7 +617,7 @@ func TestSyncWriteNoReadFail(t *testing.T) {
 
 	wnr := util.Ptr("123")
 
-	eng := &ElastAlertEngine{
+	eng := &OsqueryEngine{
 		srv: &server.Server{
 			Detectionstore: detStore,
 		},
@@ -1476,7 +649,7 @@ func TestSyncIncrementalNoChanges(t *testing.T) {
 	detStore := servermock.NewMockDetectionstore(ctrl)
 	iom := mock.NewMockIOManager(ctrl)
 
-	eng := &ElastAlertEngine{
+	eng := &OsqueryEngine{
 		srv: &server.Server{
 			Detectionstore: detStore,
 		},
@@ -1484,8 +657,6 @@ func TestSyncIncrementalNoChanges(t *testing.T) {
 		sigmaPipelineFinal:            "sigmaPipelineFinal",
 		sigmaPipelineSO:               "sigmaPipelineSO",
 		sigmaPipelinesFingerprintFile: "sigmaPipelinesFingerprintFile",
-		sigmaRulePackages:             []string{"core+"},
-		sigmaPackageDownloadTemplate:  "https://github.com/SigmaHQ/sigma/releases/latest/download/sigma_%s.zip",
 		reposFolder:                   "repos",
 		rulesFingerprintFile:          "rulesFingerprintFile",
 		elastAlertRulesFolder:         "elastAlertRulesFolder",
@@ -1569,7 +740,7 @@ func TestSyncChanges(t *testing.T) {
 	bim := servermock.NewMockBulkIndexer(ctrl)
 	auditm := servermock.NewMockBulkIndexer(ctrl)
 
-	eng := &ElastAlertEngine{
+	eng := &OsqueryEngine{
 		srv: &server.Server{
 			Context:        context.Background(),
 			Detectionstore: detStore,
@@ -1578,8 +749,6 @@ func TestSyncChanges(t *testing.T) {
 		sigmaPipelineFinal:            "sigmaPipelineFinal",
 		sigmaPipelineSO:               "sigmaPipelineSO",
 		sigmaPipelinesFingerprintFile: "sigmaPipelinesFingerprintFile",
-		sigmaRulePackages:             []string{"core+"},
-		sigmaPackageDownloadTemplate:  "https://github.com/SigmaHQ/sigma/releases/latest/download/sigma_%s.zip",
 		reposFolder:                   "repos",
 		rulesFingerprintFile:          "rulesFingerprintFile",
 		elastAlertRulesFolder:         "elastAlertRulesFolder",
@@ -1792,7 +961,7 @@ func TestLoadAndMergeAuxiliaryData(t *testing.T) {
 		},
 	}
 
-	e := ElastAlertEngine{
+	e := OsqueryEngine{
 		showAiSummaries: true,
 	}
 	err := e.LoadAuxiliaryData([]*model.AiSummary{

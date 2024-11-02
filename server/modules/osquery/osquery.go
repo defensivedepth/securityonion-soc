@@ -371,48 +371,6 @@ func (e *OsqueryEngine) ExtractDetails(detect *model.Detection) error {
 	return nil
 }
 
-func (e *OsqueryEngine) parseSigmaPackages(pkgs []string) {
-	set := map[string]struct{}{}
-
-	for _, pkg := range pkgs {
-		pkg = strings.ToLower(strings.TrimSpace(pkg))
-		switch pkg {
-		case "all":
-			set["all_rules"] = struct{}{}
-		case "emerging_threats":
-			set["emerging_threats_addon"] = struct{}{}
-		case "core++", "core+", "core", "emerging_threats_addon", "all_rules":
-			if pkg != "" {
-				set[pkg] = struct{}{}
-			}
-		}
-	}
-
-	_, ok := set["all_rules"]
-	if ok {
-		delete(set, "core++")
-		delete(set, "core+")
-		delete(set, "core")
-		delete(set, "emerging_threats_addon")
-	}
-
-	_, ok = set["core++"]
-	if ok {
-		delete(set, "core+")
-		delete(set, "core")
-	}
-
-	_, ok = set["core+"]
-	if ok {
-		delete(set, "core")
-	}
-
-	e.sigmaRulePackages = make([]string, 0, len(set))
-	for pkg := range set {
-		e.sigmaRulePackages = append(e.sigmaRulePackages, pkg)
-	}
-}
-
 func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*model.Detection) (errMap map[string]string, err error) {
 	errMap = map[string]string{} // map[publicID]error
 	defer func() {
