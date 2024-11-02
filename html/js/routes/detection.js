@@ -169,6 +169,7 @@ routes.push({ path: '/detection/:id', name: 'detection', component: {
 			languageToEngine: {
 				'suricata': 'suricata',
 				'sigma': 'elastalert',
+                                'osquery': 'osquery',
 				'yara': 'strelka',
 			},
 			changedKeys: {},
