@@ -75,12 +75,12 @@ var acceptedExtensions = map[string]bool{
 }
 
 type OsqueryEngine struct {
-	srv                                *server.Server
-	airgapBasePath                     string
-	failAfterConsecutiveErrorCount     int
-	elastAlertRulesFolder              string
-	rulesFingerprintFile               string
-	autoEnabledSigmaRules              []string
+	srv                            *server.Server
+	airgapBasePath                 string
+	failAfterConsecutiveErrorCount int
+	elastAlertRulesFolder          string
+	rulesFingerprintFile           string
+	//autoEnabledSigmaRules              []string
 	additionalAlerters                 []string
 	additionalAlerterParams            string
 	informationalSeverityAlerters      []string
@@ -112,21 +112,21 @@ type OsqueryEngine struct {
 	model.EngineState
 }
 
-func checkRulesetEnabled(e *OsqueryEngine, det *model.Detection) {
-	det.IsEnabled = false
-	if det.Ruleset == "" || det.Severity == "" {
-		return
-	}
+//func checkRulesetEnabled(e *OsqueryEngine, det *model.Detection) {
+//	det.IsEnabled = false
+//	if det.Ruleset == "" || det.Severity == "" {
+//		return
+//	}
 
-	// Combine Ruleset and Severity into a single string
-	metaCombined := det.Ruleset + "+" + string(det.Severity)
-	for _, rule := range e.autoEnabledSigmaRules {
-		if strings.EqualFold(rule, metaCombined) {
-			det.IsEnabled = true
-			break
-		}
-	}
-}
+// Combine Ruleset and Severity into a single string
+//	metaCombined := det.Ruleset + "+" + string(det.Severity)
+//	for _, rule := range e.autoEnabledSigmaRules {
+//		if strings.EqualFold(rule, metaCombined) {
+//			det.IsEnabled = true
+//			break
+//		}
+//	}
+//}
 
 func NewOsqueryEngine(srv *server.Server) *OsqueryEngine {
 	engine := &OsqueryEngine{
@@ -303,18 +303,6 @@ func (e *OsqueryEngine) ExtractDetails(detect *model.Detection) error {
 
 	if rule.Description != nil {
 		detect.Description = *rule.Description
-	}
-
-	if rule.LogSource.Category != nil {
-		detect.Category = *rule.LogSource.Category
-	}
-
-	if rule.LogSource.Product != nil {
-		detect.Product = *rule.LogSource.Product
-	}
-
-	if rule.LogSource.Service != nil {
-		detect.Service = *rule.LogSource.Service
 	}
 
 	if rule.Level != nil {
@@ -783,7 +771,7 @@ func (e *OsqueryEngine) syncCommunityDetections(ctx context.Context, logger *log
 			detect.CreateTime = orig.CreateTime
 		} else {
 			detect.CreateTime = util.Ptr(time.Now())
-			checkRulesetEnabled(e, detect)
+			// checkRulesetEnabled(e, detect)
 		}
 
 		_, err = e.ApplyFilters(detect)

@@ -55,22 +55,12 @@ type OsqueryRule struct {
 	Date        *string                `yaml:"date"`
 	Modified    *string                `yaml:"modified,omitempty"`
 	Tags        []string               `yaml:"tags,omitempty"`
-	LogSource   LogSource              `yaml:"logsource"`
-	Detection   SigmaDetection         `yaml:"detection"`
-	Fields      []string               `yaml:"fields,omitempty"`
 	Level       *SigmaLevel            `yaml:"level"`
 	License     *string                `yaml:"license,omitempty"`
 	Category    *string                `yaml:"category,omitempty"`
 	OS          []string               `yaml:"os,omitempty"`
 	SQL         *string                `yaml:"sql,omitempty"`
 	Rest        map[string]interface{} `yaml:",inline"`
-}
-
-type LogSource struct {
-	Category   *string `yaml:"category,omitempty"`
-	Product    *string `yaml:"product,omitempty"`
-	Service    *string `yaml:"service,omitempty"`
-	Definition *string `yaml:"definition,omitempty"`
 }
 
 type SigmaDetection struct {
@@ -197,18 +187,6 @@ func (r *OsqueryRule) ToDetection(ruleset string, license string, isCommunity bo
 
 	if r.Description != nil {
 		det.Description = *r.Description
-	}
-
-	if r.LogSource.Category != nil && *r.LogSource.Category != "" {
-		det.Category = *r.LogSource.Category
-	}
-
-	if r.LogSource.Product != nil && *r.LogSource.Product != "" {
-		det.Product = *r.LogSource.Product
-	}
-
-	if r.LogSource.Service != nil && *r.LogSource.Service != "" {
-		det.Service = *r.LogSource.Service
 	}
 
 	return det
