@@ -402,6 +402,10 @@ routes.push({ path: '/detection/:id', name: 'detection', component: {
 					this.extractElastAlertLogic();
 					this.extractedLogicClass = 'language-yaml';
 					break;
+                                case 'osquery':
+                                        this.extractOsqueryLogic();
+                                        this.extractedLogicClass = 'language-yaml';
+                                        break;
 			}
 		},
 		extractSuricataLogic() {
@@ -488,6 +492,12 @@ routes.push({ path: '/detection/:id', name: 'detection', component: {
 
 			this.extractedLogic = jsyaml.dump({ logsource: logSource, detection: detection }).trim();
 		},
+		extractOsqueryLogic() {
+			const yaml = jsyaml.load(this.detect.content, { schema: jsyaml.FAILSAFE_SCHEMA });
+			const sql = yaml['sql'];
+
+			this.extractedLogic = jsyaml.dump({ sql: sql }).trim();
+		},
 		extractDetails() {
 			this.extractedCreated = this.extractedUpdated = '';
 
@@ -500,6 +510,9 @@ routes.push({ path: '/detection/:id', name: 'detection', component: {
 					break;
 				case 'elastalert':
 					this.extractElastAlertDetails();
+					break;
+				case 'osquery':
+					this.extractOsqueryDetails();
 					break;
 			}
 		},
@@ -542,6 +555,12 @@ routes.push({ path: '/detection/:id', name: 'detection', component: {
 			}
 		},
 		extractElastAlertDetails() {
+			const yaml = jsyaml.load(this.detect.content, { schema: jsyaml.FAILSAFE_SCHEMA });
+
+			this.extractedCreated = yaml['date'];
+			this.extractedUpdated = yaml['modified'];
+		},
+		extractOsqueryDetails() {
 			const yaml = jsyaml.load(this.detect.content, { schema: jsyaml.FAILSAFE_SCHEMA });
 
 			this.extractedCreated = yaml['date'];
