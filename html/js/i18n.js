@@ -1010,6 +1010,7 @@ const i18n = {
       cc_strelka: 'Strelka',
       cc_suricata: 'Suricata',
       cc_yara: 'YARA',
+      cc_osquery: 'Osquery',
     },
   },
 
