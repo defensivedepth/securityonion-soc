@@ -6,6 +6,9 @@
 package osquery
 
 import (
+	"net/http"
+)
+import (
 	"bytes"
 	"context"
 	"crypto/md5"
@@ -358,6 +361,18 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 		}
 
 		if det.IsEnabled {
+
+			// Example usage of the function
+			baseURL := "http://sa-upgradetest-jb:5601"
+			username := "so_elastic"
+			password := "+A;hhx>.w8~RGsa)mHm>esA43*4Q#N:(V?=o[nl6?@uMk8g;l0Z>-hc9AB5L1t1S+ao>vZf|"
+			sqlQuery := "SELECT * FROM listening_ports limit 2;"
+
+			err := createOsqueryPack(baseURL, username, password, sqlQuery)
+			if err != nil {
+				fmt.Printf("Error creating osquery pack: %v\n", err)
+			}
+
 			eaRule, err := e.sigmaToOsquery(ctx, det)
 			if err != nil {
 				errMap[det.PublicID] = fmt.Sprintf("unable to convert sigma to elastalert: %s", err)
@@ -1650,4 +1665,93 @@ func (e *OsqueryEngine) getDeployedPublicIds() (publicIds []string, err error) {
 	}
 
 	return publicIds, nil
+}
+
+// OsqueryPack represents the payload structure for the Osquery pack creation.
+type OsqueryPack struct {
+	Name        string           `json:"name"`
+	Description string           `json:"description"`
+	Enabled     bool             `json:"enabled"`
+	PolicyIDs   []string         `json:"policy_ids"`
+	Shards      map[string]int   `json:"shards"`
+	Queries     map[string]Query `json:"queries"`
+}
+
+// Query represents an individual query within the Osquery pack.
+type Query struct {
+	Query      string                `json:"query"`
+	Interval   int                   `json:"interval"`
+	Snapshot   bool                  `json:"snapshot"`
+	Removed    bool                  `json:"removed"`
+	Timeout    int                   `json:"timeout"`
+	EcsMapping map[string]EcsMapping `json:"ecs_mapping,omitempty"`
+}
+
+// EcsMapping represents ECS mapping for fields within a query.
+type EcsMapping struct {
+	Field string   `json:"field,omitempty"`
+	Value []string `json:"value,omitempty"`
+}
+
+// createOsqueryPack creates a new Osquery pack in Kibana using the Kibana API.
+func createOsqueryPack(baseURL, username, password, sqlQuery string) error {
+	// Define the Osquery pack payload
+	pack := OsqueryPack{
+		Name:        "All-Hosts2",
+		Description: "This pack is managed by Security Onion Detections. It targets all enrolled hosts across all policies.",
+		Enabled:     true,
+		PolicyIDs:   []string{}, // Add specific policy IDs if needed
+		Shards:      map[string]int{"*": 100},
+		Queries: map[string]Query{
+			"baseline-test": {
+				Query:    sqlQuery,
+				Interval: 3600,
+				Snapshot: true,
+				Removed:  false,
+				Timeout:  60,
+				EcsMapping: map[string]EcsMapping{
+					"client.port": {
+						Field: "port",
+					},
+					"tags": {
+						Value: []string{"tag1", "tag2"},
+					},
+				},
+			},
+		},
+	}
+
+	// Serialize the payload to JSON
+	payload, err := json.Marshal(pack)
+	if err != nil {
+		return fmt.Errorf("failed to marshal JSON payload: %w", err)
+	}
+
+	// Create the HTTP request
+	url := fmt.Sprintf("%s/api/osquery/packs", baseURL)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	// Set headers and authentication
+	req.SetBasicAuth(username, password)
+	req.Header.Set("kbn-xsrf", "true")
+	req.Header.Set("Content-Type", "application/json")
+
+	// Execute the request
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send HTTP request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Check for successful response
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("failed to create osquery pack, status code: %d", resp.StatusCode)
+	}
+
+	fmt.Println("Osquery pack created successfully")
+	return nil
 }
