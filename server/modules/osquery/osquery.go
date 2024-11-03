@@ -6,6 +6,7 @@
 package osquery
 
 import (
+	"io/ioutil"
 	"net/http"
 )
 import (
@@ -366,11 +367,11 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 			baseURL := "http://sa-upgradetest-jb:5601"
 			username := "so_elastic"
 			password := "+A;hhx>.w8~RGsa)mHm>esA43*4Q#N:(V?=o[nl6?@uMk8g;l0Z>-hc9AB5L1t1S+ao>vZf|"
-			sqlQuery := "SELECT * FROM listening_ports limit 2;"
+			sqlQuery := "SELECT * FROM listening_ports limit 5;"
 
-			err := createOsqueryPack(baseURL, username, password, sqlQuery)
+			err := createOrUpdateOsqueryPack(baseURL, username, password, sqlQuery)
 			if err != nil {
-				fmt.Printf("Error creating osquery pack: %v\n", err)
+				fmt.Printf("Error creating/updating osquery pack: %v\n", err)
 			}
 
 			eaRule, err := e.sigmaToOsquery(ctx, det)
@@ -1693,14 +1694,61 @@ type EcsMapping struct {
 	Value []string `json:"value,omitempty"`
 }
 
-// createOsqueryPack creates a new Osquery pack in Kibana using the Kibana API.
-func createOsqueryPack(baseURL, username, password, sqlQuery string) error {
+// checkIfPackExists checks if an Osquery pack with the given name exists by using the GET packs API.
+func checkIfPackExists(baseURL, username, password, packName string) (bool, error) {
+	url := fmt.Sprintf("%s/api/osquery/packs", baseURL)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.SetBasicAuth(username, password)
+	req.Header.Set("kbn-xsrf", "true")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return false, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var packs []OsqueryPack
+	if err := json.Unmarshal(body, &packs); err != nil {
+		return false, fmt.Errorf("failed to unmarshal JSON: %w", err)
+	}
+
+	for _, pack := range packs {
+		if pack.Name == packName {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// createOrUpdateOsqueryPack creates or updates an Osquery pack in Kibana.
+func createOrUpdateOsqueryPack(baseURL, username, password, sqlQuery string) error {
+	packName := "All-Hosts"
+
+	// Check if the pack already exists
+	exists, err := checkIfPackExists(baseURL, username, password, packName)
+	if err != nil {
+		return fmt.Errorf("error checking if pack exists: %w", err)
+	}
+
 	// Define the Osquery pack payload
 	pack := OsqueryPack{
-		Name:        "All-Hosts2",
+		Name:        packName,
 		Description: "This pack is managed by Security Onion Detections. It targets all enrolled hosts across all policies.",
 		Enabled:     true,
-		PolicyIDs:   []string{}, // Add specific policy IDs if needed
+		PolicyIDs:   []string{},
 		Shards:      map[string]int{"*": 100},
 		Queries: map[string]Query{
 			"baseline-test": {
@@ -1727,11 +1775,22 @@ func createOsqueryPack(baseURL, username, password, sqlQuery string) error {
 		return fmt.Errorf("failed to marshal JSON payload: %w", err)
 	}
 
-	// Create the HTTP request
-	url := fmt.Sprintf("%s/api/osquery/packs", baseURL)
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
-	if err != nil {
-		return fmt.Errorf("failed to create HTTP request: %w", err)
+	client := &http.Client{}
+	var req *http.Request
+	if exists {
+		// If the pack exists, update it
+		url := fmt.Sprintf("%s/api/osquery/packs/%s", baseURL, packName)
+		req, err = http.NewRequest("PUT", url, bytes.NewBuffer(payload))
+		if err != nil {
+			return fmt.Errorf("failed to create update request: %w", err)
+		}
+	} else {
+		// If the pack does not exist, create it
+		url := fmt.Sprintf("%s/api/osquery/packs", baseURL)
+		req, err = http.NewRequest("POST", url, bytes.NewBuffer(payload))
+		if err != nil {
+			return fmt.Errorf("failed to create create request: %w", err)
+		}
 	}
 
 	// Set headers and authentication
@@ -1740,7 +1799,6 @@ func createOsqueryPack(baseURL, username, password, sqlQuery string) error {
 	req.Header.Set("Content-Type", "application/json")
 
 	// Execute the request
-	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send HTTP request: %w", err)
@@ -1749,9 +1807,13 @@ func createOsqueryPack(baseURL, username, password, sqlQuery string) error {
 
 	// Check for successful response
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("failed to create osquery pack, status code: %d", resp.StatusCode)
+		return fmt.Errorf("failed to create/update osquery pack, status code: %d", resp.StatusCode)
 	}
 
-	fmt.Println("Osquery pack created successfully")
+	if exists {
+		fmt.Println("Osquery pack updated successfully")
+	} else {
+		fmt.Println("Osquery pack created successfully")
+	}
 	return nil
 }
