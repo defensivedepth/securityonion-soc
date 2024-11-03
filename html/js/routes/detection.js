@@ -326,6 +326,9 @@ routes.push({ path: '/detection/:id', name: 'detection', component: {
 				case 'elastalert':
 					this.extractElastAlertReferences();
 					break;
+				case 'osquery':
+					this.extractOsqueryReferences();
+					break;
 			}
 		},
 		extractSuricataReferences() {
@@ -356,6 +359,20 @@ routes.push({ path: '/detection/:id', name: 'detection', component: {
 			}
 		},
 		extractElastAlertReferences() {
+			const yaml = jsyaml.load(this.detect.content, {schema: jsyaml.FAILSAFE_SCHEMA});
+			if (!yaml['references']) {
+				return;
+			}
+
+			this.extractedReferences = yaml['references'].map(r => {
+				if (this.isValidUrl(r)) {
+					return { type: "url", text: r, link: this.fixProtocol(r) };
+				} else {
+					return { type: "text", text: r };
+				}
+			});
+		},
+		extractOsqueryReferences() {
 			const yaml = jsyaml.load(this.detect.content, {schema: jsyaml.FAILSAFE_SCHEMA});
 			if (!yaml['references']) {
 				return;
