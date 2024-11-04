@@ -169,7 +169,7 @@ func (c *Client) CreatePack(pack OsqueryPackRequest) error {
 	return nil
 }
 
-// UpdatePack updates an existing Osquery pack by merging new queries with existing ones, without preserving ECS mappings.
+// UpdatePack updates an existing Osquery pack by merging new queries with existing ones.
 func (c *Client) UpdatePack(packID string, newPack OsqueryPackRequest) error {
 	logger := c.Logger.WithField("pack_id", packID)
 	logger.Info("retrieving existing pack queries for update")
@@ -189,10 +189,9 @@ func (c *Client) UpdatePack(packID string, newPack OsqueryPackRequest) error {
 		return fmt.Errorf("failed to unmarshal existing pack JSON: %w", err)
 	}
 
-	// Initialize mergedQueries as a map and populate it with existing queries
+	// Prepare mergedQueries by adding existing ones
 	mergedQueries := make(map[string]Query)
 	for _, existingQuery := range existingPack.Queries {
-		logger.WithField("existing_query_id", existingQuery.ID).Info("adding existing query to mergedQueries")
 		mergedQueries[existingQuery.ID] = Query{
 			Query:    existingQuery.Query,
 			Interval: existingQuery.Interval,
@@ -202,7 +201,7 @@ func (c *Client) UpdatePack(packID string, newPack OsqueryPackRequest) error {
 		}
 	}
 
-	// Add new queries, avoiding duplicates based on det.PublicID
+	// Add new queries if they don’t exist
 	for id, newQuery := range newPack.Queries {
 		if _, exists := mergedQueries[id]; !exists {
 			logger.WithField("new_query_id", id).Info("adding new query to mergedQueries")
@@ -212,7 +211,7 @@ func (c *Client) UpdatePack(packID string, newPack OsqueryPackRequest) error {
 		}
 	}
 
-	// Log the full merged queries for verification
+	// Log the complete merged queries for verification
 	for id, query := range mergedQueries {
 		logger.WithFields(log.Fields{
 			"query_id": id,
@@ -220,7 +219,7 @@ func (c *Client) UpdatePack(packID string, newPack OsqueryPackRequest) error {
 		}).Info("final merged query")
 	}
 
-	// Update the pack with the merged queries
+	// Update the pack with the full merged queries set
 	updatedPack := OsqueryPackRequest{
 		Name:        newPack.Name,
 		Description: newPack.Description,
@@ -230,7 +229,7 @@ func (c *Client) UpdatePack(packID string, newPack OsqueryPackRequest) error {
 		Shards:      newPack.Shards,
 	}
 
-	logger.Info("updating osquery pack with merged queries")
+	logger.Info("updating osquery pack with full merged queries set")
 	_, err = c.doRequest("PUT", endpoint, updatedPack)
 	if err != nil {
 		logger.WithError(err).Error("failed to update osquery pack")
