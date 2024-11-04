@@ -378,32 +378,26 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 				Enabled:     true,
 				PolicyIDs:   []string{},
 				Shards:      map[string]int{"*": 100},
-				Queries: []Query{
-					{
-						ID:       "baseline-test",
+				Queries: map[string]Query{
+					"baseline-test": {
 						Query:    sqlQuery,
 						Interval: 3600,
 						Snapshot: true,
 						Removed:  false,
 						Timeout:  60,
-						EcsMapping: []EcsMapping{
-							{
-								Key: "client.port",
-								Value: map[string]interface{}{
-									"field": "port",
-								},
+						EcsMapping: map[string]interface{}{
+							"client.port": map[string]interface{}{
+								"field": "port",
 							},
-							{
-								Key: "tags",
-								Value: map[string]interface{}{
-									"value": []string{"tag1", "tag2"},
-								},
+							"tags": map[string]interface{}{
+								"value": []string{"tag1", "tag2"},
 							},
 						},
 					},
 				},
 			}
 
+			// Check if the pack exists and create or update accordingly
 			exists, err := client.CheckIfPackExists(pack.Name)
 			if err != nil {
 				client.Logger.WithError(err).Error("error checking if pack exists")
@@ -413,6 +407,10 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 				err = client.UpdatePack(pack.Name, pack)
 			} else {
 				err = client.CreatePack(pack)
+			}
+
+			if err != nil {
+				client.Logger.WithError(err).Error("error creating/updating osquery pack")
 			}
 
 			if err != nil {
@@ -1722,27 +1720,21 @@ type Client struct {
 }
 
 type OsqueryPack struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Enabled     bool           `json:"enabled"`
-	PolicyIDs   []string       `json:"policy_ids"`
-	Queries     []Query        `json:"queries"`
-	Shards      map[string]int `json:"shards,omitempty"`
+	Name        string           `json:"name"`
+	Description string           `json:"description"`
+	Enabled     bool             `json:"enabled"`
+	PolicyIDs   []string         `json:"policy_ids"`
+	Queries     map[string]Query `json:"queries"`
+	Shards      map[string]int   `json:"shards,omitempty"`
 }
 
 type Query struct {
-	ID         string       `json:"id,omitempty"`
-	Query      string       `json:"query"`
-	Interval   int          `json:"interval"`
-	Snapshot   bool         `json:"snapshot"`
-	Removed    bool         `json:"removed"`
-	Timeout    int          `json:"timeout"`
-	EcsMapping []EcsMapping `json:"ecs_mapping,omitempty"`
-}
-
-type EcsMapping struct {
-	Key   string                 `json:"key"`
-	Value map[string]interface{} `json:"value"`
+	Query      string                 `json:"query"`
+	Interval   int                    `json:"interval"`
+	Snapshot   bool                   `json:"snapshot"`
+	Removed    bool                   `json:"removed"`
+	Timeout    int                    `json:"timeout"`
+	EcsMapping map[string]interface{} `json:"ecs_mapping,omitempty"`
 }
 
 // doRequest is a generic function to handle HTTP requests, logging request and response details for debugging.
