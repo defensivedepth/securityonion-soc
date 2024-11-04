@@ -364,13 +364,57 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 
 		if det.IsEnabled {
 
-			// Example usage of the function
-			baseURL := "http://sa-upgradetest-jb:5601"
-			username := "so_elastic"
-			password := "+A;hhx>.w8~RGsa)mHm>esA43*4Q#N:(V?=o[nl6?@uMk8g;l0Z>-hc9AB5L1t1S+ao>vZf|"
-			sqlQuery := "SELECT * FROM listening_ports limit 5;"
+			client := &Client{
+				BaseURL:  "http://sa-upgradetest-jb:5601",
+				Username: "so_elastic",
+				Password: "+A;hhx>.w8~RGsa)mHm>esA43*4Q#N:(V?=o[nl6?@uMk8g;l0Z>-hc9AB5L1t1S+ao>vZf|",
+			}
 
-			err := createOrUpdateOsqueryPack(baseURL, username, password, sqlQuery)
+			sqlQuery := "SELECT * FROM listening_ports;"
+			pack := OsqueryPack{
+				Name:        "All-Hosts",
+				Description: "This pack is managed by Security Onion Detections. It targets all enrolled hosts across all policies.",
+				Enabled:     true,
+				PolicyIDs:   []string{},
+				Shards:      map[string]int{"*": 100},
+				Queries: []Query{
+					{
+						ID:       "baseline-test",
+						Query:    sqlQuery,
+						Interval: 3600,
+						Snapshot: true,
+						Removed:  false,
+						Timeout:  60,
+						EcsMapping: []EcsMapping{
+							{
+								Key: "client.port",
+								Value: map[string]interface{}{
+									"field": "port",
+								},
+							},
+							{
+								Key: "tags",
+								Value: map[string]interface{}{
+									"value": []string{"tag1", "tag2"},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			// Check if the pack exists and create or update accordingly
+			exists, err := client.CheckIfPackExists(pack.Name)
+			if err != nil {
+				fmt.Printf("Error checking if pack exists: %v\n", err)
+			}
+
+			if exists {
+				err = client.UpdatePack(pack.Name, pack)
+			} else {
+				err = client.CreatePack(pack)
+			}
+
 			if err != nil {
 				fmt.Printf("Error creating/updating osquery pack: %v\n", err)
 			}
@@ -1669,6 +1713,13 @@ func (e *OsqueryEngine) getDeployedPublicIds() (publicIds []string, err error) {
 	return publicIds, nil
 }
 
+// Client holds base URL and authentication for API requests
+type Client struct {
+	BaseURL  string
+	Username string
+	Password string
+}
+
 // OsqueryPack represents the payload structure for the Osquery pack creation.
 type OsqueryPack struct {
 	Name        string         `json:"name"`
@@ -1696,39 +1747,64 @@ type EcsMapping struct {
 	Value map[string]interface{} `json:"value"`
 }
 
-// PackResponse represents the structure of the response from the GET /api/osquery/packs API.
-type PackResponse struct {
-	Data []OsqueryPack `json:"data"`
-}
-
-// checkIfPackExists checks if an Osquery pack with the given name exists by using the GET packs API.
-func checkIfPackExists(baseURL, username, password, packName string) (bool, error) {
-	url := fmt.Sprintf("%s/api/osquery/packs", baseURL)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return false, fmt.Errorf("failed to create request: %w", err)
+// doRequest is a generic function to handle HTTP requests, setting headers and authentication, and reading the response.
+func (c *Client) doRequest(method, endpoint string, body interface{}) ([]byte, error) {
+	// Marshal body to JSON if provided
+	var jsonBody []byte
+	var err error
+	if body != nil {
+		jsonBody, err = json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal JSON body: %w", err)
+		}
 	}
-	req.SetBasicAuth(username, password)
-	req.Header.Set("kbn-xsrf", "true")
 
+	// Create the request
+	url := fmt.Sprintf("%s%s", c.BaseURL, endpoint)
+	req, err := http.NewRequest(method, url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Set headers and basic auth
+	req.SetBasicAuth(c.Username, c.Password)
+	req.Header.Set("kbn-xsrf", "true")
+	req.Header.Set("Content-Type", "application/json")
+
+	// Execute the request
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return false, fmt.Errorf("failed to send request: %w", err)
+		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	// Check for HTTP status codes other than 200 or 201
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	// Read and return response body
+	responseBody, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return false, fmt.Errorf("failed to read response body: %w", err)
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var packResponse PackResponse
-	if err := json.Unmarshal(body, &packResponse); err != nil {
+	return responseBody, nil
+}
+
+// CheckIfPackExists checks if an Osquery pack with the given name exists
+func (c *Client) CheckIfPackExists(packName string) (bool, error) {
+	response, err := c.doRequest("GET", "/api/osquery/packs", nil)
+	if err != nil {
+		return false, err
+	}
+
+	// Unmarshal response and check for pack existence
+	var packResponse struct {
+		Data []OsqueryPack `json:"data"`
+	}
+	if err := json.Unmarshal(response, &packResponse); err != nil {
 		return false, fmt.Errorf("failed to unmarshal JSON: %w", err)
 	}
 
@@ -1740,94 +1816,23 @@ func checkIfPackExists(baseURL, username, password, packName string) (bool, erro
 	return false, nil
 }
 
-// createOrUpdateOsqueryPack creates or updates an Osquery pack in Kibana.
-func createOrUpdateOsqueryPack(baseURL, username, password, sqlQuery string) error {
-	packName := "All-Hosts"
-
-	// Check if the pack already exists
-	exists, err := checkIfPackExists(baseURL, username, password, packName)
+// CreatePack creates a new Osquery pack
+func (c *Client) CreatePack(pack OsqueryPack) error {
+	_, err := c.doRequest("POST", "/api/osquery/packs", pack)
 	if err != nil {
-		return fmt.Errorf("error checking if pack exists: %w", err)
+		return fmt.Errorf("failed to create osquery pack: %w", err)
 	}
+	fmt.Println("Osquery pack created successfully")
+	return nil
+}
 
-	// Define the Osquery pack payload
-	pack := OsqueryPack{
-		Name:        packName,
-		Description: "This pack is managed by Security Onion Detections. It targets all enrolled hosts across all policies.",
-		Enabled:     true,
-		PolicyIDs:   []string{},
-		Shards:      map[string]int{"*": 100},
-		Queries: []Query{
-			{
-				ID:       "baseline-test",
-				Query:    sqlQuery,
-				Interval: 3600,
-				Snapshot: true,
-				Removed:  false,
-				Timeout:  60,
-				EcsMapping: []EcsMapping{
-					{
-						Key: "client.port",
-						Value: map[string]interface{}{
-							"field": "port",
-						},
-					},
-					{
-						Key: "tags",
-						Value: map[string]interface{}{
-							"value": []string{"tag1", "tag2"},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	// Serialize the payload to JSON
-	payload, err := json.Marshal(pack)
+// UpdatePack updates an existing Osquery pack
+func (c *Client) UpdatePack(packName string, pack OsqueryPack) error {
+	endpoint := fmt.Sprintf("/api/osquery/packs/%s", packName)
+	_, err := c.doRequest("PUT", endpoint, pack)
 	if err != nil {
-		return fmt.Errorf("failed to marshal JSON payload: %w", err)
+		return fmt.Errorf("failed to update osquery pack: %w", err)
 	}
-
-	client := &http.Client{}
-	var req *http.Request
-	if exists {
-		// If the pack exists, update it
-		url := fmt.Sprintf("%s/api/osquery/packs/%s", baseURL, packName)
-		req, err = http.NewRequest("PUT", url, bytes.NewBuffer(payload))
-		if err != nil {
-			return fmt.Errorf("failed to create update request: %w", err)
-		}
-	} else {
-		// If the pack does not exist, create it
-		url := fmt.Sprintf("%s/api/osquery/packs", baseURL)
-		req, err = http.NewRequest("POST", url, bytes.NewBuffer(payload))
-		if err != nil {
-			return fmt.Errorf("failed to create create request: %w", err)
-		}
-	}
-
-	// Set headers and authentication
-	req.SetBasicAuth(username, password)
-	req.Header.Set("kbn-xsrf", "true")
-	req.Header.Set("Content-Type", "application/json")
-
-	// Execute the request
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send HTTP request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check for successful response
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("failed to create/update osquery pack, status code: %d", resp.StatusCode)
-	}
-
-	if exists {
-		fmt.Println("Osquery pack updated successfully")
-	} else {
-		fmt.Println("Osquery pack created successfully")
-	}
+	fmt.Println("Osquery pack updated successfully")
 	return nil
 }
