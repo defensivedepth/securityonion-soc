@@ -1671,28 +1671,29 @@ func (e *OsqueryEngine) getDeployedPublicIds() (publicIds []string, err error) {
 
 // OsqueryPack represents the payload structure for the Osquery pack creation.
 type OsqueryPack struct {
-	Name        string           `json:"name"`
-	Description string           `json:"description"`
-	Enabled     bool             `json:"enabled"`
-	PolicyIDs   []string         `json:"policy_ids"`
-	Shards      map[string]int   `json:"shards"`
-	Queries     map[string]Query `json:"queries"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Enabled     bool           `json:"enabled"`
+	PolicyIDs   []string       `json:"policy_ids"`
+	Queries     []Query        `json:"queries"`
+	Shards      map[string]int `json:"shards,omitempty"`
 }
 
 // Query represents an individual query within the Osquery pack.
 type Query struct {
-	Query      string                `json:"query"`
-	Interval   int                   `json:"interval"`
-	Snapshot   bool                  `json:"snapshot"`
-	Removed    bool                  `json:"removed"`
-	Timeout    int                   `json:"timeout"`
-	EcsMapping map[string]EcsMapping `json:"ecs_mapping,omitempty"`
+	ID         string       `json:"id,omitempty"`
+	Query      string       `json:"query"`
+	Interval   int          `json:"interval"`
+	Snapshot   bool         `json:"snapshot"`
+	Removed    bool         `json:"removed"`
+	Timeout    int          `json:"timeout"`
+	EcsMapping []EcsMapping `json:"ecs_mapping,omitempty"`
 }
 
 // EcsMapping represents ECS mapping for fields within a query.
 type EcsMapping struct {
-	Field string   `json:"field,omitempty"`
-	Value []string `json:"value,omitempty"`
+	Key   string                 `json:"key"`
+	Value map[string]interface{} `json:"value"`
 }
 
 // PackResponse represents the structure of the response from the GET /api/osquery/packs API.
@@ -1754,21 +1755,28 @@ func createOrUpdateOsqueryPack(baseURL, username, password, sqlQuery string) err
 		Name:        packName,
 		Description: "This pack is managed by Security Onion Detections. It targets all enrolled hosts across all policies.",
 		Enabled:     true,
-		PolicyIDs:   []string{}, // Add specific policy IDs if needed
+		PolicyIDs:   []string{},
 		Shards:      map[string]int{"*": 100},
-		Queries: map[string]Query{
-			"baseline-test": {
+		Queries: []Query{
+			{
+				ID:       "baseline-test",
 				Query:    sqlQuery,
 				Interval: 3600,
 				Snapshot: true,
 				Removed:  false,
 				Timeout:  60,
-				EcsMapping: map[string]EcsMapping{
-					"client.port": {
-						Field: "port",
+				EcsMapping: []EcsMapping{
+					{
+						Key: "client.port",
+						Value: map[string]interface{}{
+							"field": "port",
+						},
 					},
-					"tags": {
-						Value: []string{"tag1", "tag2"},
+					{
+						Key: "tags",
+						Value: map[string]interface{}{
+							"value": []string{"tag1", "tag2"},
+						},
 					},
 				},
 			},
