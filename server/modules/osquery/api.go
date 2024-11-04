@@ -169,17 +169,65 @@ func (c *Client) CreatePack(pack OsqueryPackRequest) error {
 	return nil
 }
 
-// UpdatePack updates an existing Osquery pack using its ID
-func (c *Client) UpdatePack(packID string, pack OsqueryPackRequest) error {
+// UpdatePack updates an existing Osquery pack by merging new queries with existing ones.
+func (c *Client) UpdatePack(packID string, newPack OsqueryPackRequest) error {
 	logger := c.Logger.WithField("pack_id", packID)
-	logger.Info("updating osquery pack")
+	logger.Info("retrieving existing pack queries for update")
 
+	// Retrieve the existing pack to get current queries
 	endpoint := fmt.Sprintf("/api/osquery/packs/%s", packID)
-	_, err := c.doRequest("PUT", endpoint, pack)
+	response, err := c.doRequest("GET", endpoint, nil)
+	if err != nil {
+		logger.WithError(err).Error("failed to retrieve existing pack for update")
+		return fmt.Errorf("failed to retrieve existing pack: %w", err)
+	}
+
+	// Unmarshal the response to get existing queries
+	var existingPack OsqueryPackResponse
+	if err := json.Unmarshal(response, &existingPack); err != nil {
+		logger.WithError(err).Error("failed to unmarshal existing pack JSON")
+		return fmt.Errorf("failed to unmarshal existing pack JSON: %w", err)
+	}
+
+	// Initialize mergedQueries as a map and populate it with existing queries
+	mergedQueries := make(map[string]Query)
+	for _, existingQuery := range existingPack.Queries {
+		mergedQueries[existingQuery.ID] = Query{
+			Query:      existingQuery.Query,
+			Interval:   existingQuery.Interval,
+			Snapshot:   existingQuery.Snapshot,
+			Removed:    existingQuery.Removed,
+			Timeout:    existingQuery.Timeout,
+			EcsMapping: make(map[string]interface{}), // Assuming you'll need ECS mapping conversion
+		}
+	}
+
+	// Merge new queries, avoiding duplicates based on det.PublicID
+	for id, newQuery := range newPack.Queries {
+		if _, exists := mergedQueries[id]; !exists {
+			mergedQueries[id] = newQuery
+		} else {
+			logger.WithField("query_id", id).Info("query already exists, skipping")
+		}
+	}
+
+	// Update the pack with the merged queries
+	updatedPack := OsqueryPackRequest{
+		Name:        newPack.Name,
+		Description: newPack.Description,
+		Enabled:     newPack.Enabled,
+		PolicyIDs:   newPack.PolicyIDs,
+		Queries:     mergedQueries,
+		Shards:      newPack.Shards,
+	}
+
+	logger.Info("updating osquery pack with merged queries")
+	_, err = c.doRequest("PUT", endpoint, updatedPack)
 	if err != nil {
 		logger.WithError(err).Error("failed to update osquery pack")
 		return fmt.Errorf("failed to update osquery pack: %w", err)
 	}
-	logger.Info("osquery pack updated successfully")
+
+	logger.Info("osquery pack updated successfully with merged queries")
 	return nil
 }
