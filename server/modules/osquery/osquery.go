@@ -17,14 +17,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/elastic/go-elasticsearch/v8/esutil"
-	"github.com/security-onion-solutions/securityonion-soc/licensing"
 	"github.com/security-onion-solutions/securityonion-soc/model"
 	"github.com/security-onion-solutions/securityonion-soc/module"
 	"github.com/security-onion-solutions/securityonion-soc/server"
@@ -81,31 +79,18 @@ type OsqueryEngine struct {
 	elastAlertRulesFolder          string
 	rulesFingerprintFile           string
 	//autoEnabledSigmaRules              []string
-	additionalAlerters                 []string
-	additionalAlerterParams            string
-	informationalSeverityAlerters      []string
-	informationalSeverityAlerterParams string
-	lowSeverityAlerters                []string
-	lowSeverityAlerterParams           string
-	mediumSeverityAlerters             []string
-	mediumSeverityAlerterParams        string
-	highSeverityAlerters               []string
-	highSeverityAlerterParams          string
-	criticalSeverityAlerters           []string
-	criticalSeverityAlerterParams      string
-	rulesRepos                         []*model.RuleRepo
-	reposFolder                        string
-	isRunning                          bool
-	interm                             sync.Mutex
-	airgapEnabled                      bool
-	notify                             bool
-	writeNoRead                        *string
-	aiSummaries                        *sync.Map // map[string]*detections.AiSummary{}
-	showAiSummaries                    bool
-	aiRepoUrl                          string
-	aiRepoBranch                       string
-	aiRepoPath                         string
-	customAlerters                     *map[string]interface{}
+	rulesRepos      []*model.RuleRepo
+	reposFolder     string
+	isRunning       bool
+	interm          sync.Mutex
+	airgapEnabled   bool
+	notify          bool
+	writeNoRead     *string
+	aiSummaries     *sync.Map // map[string]*detections.AiSummary{}
+	showAiSummaries bool
+	aiRepoUrl       string
+	aiRepoBranch    string
+	aiRepoPath      string
 	detections.SyncSchedulerParams
 	detections.IntegrityCheckerData
 	detections.IOManager
@@ -156,7 +141,6 @@ func (e *OsqueryEngine) Init(config module.ModuleConfig) (err error) {
 
 	e.airgapBasePath = module.GetStringDefault(config, "airgapBasePath", DEFAULT_AIRGAP_BASE_PATH)
 	e.CommunityRulesImportFrequencySeconds = module.GetIntDefault(config, "communityRulesImportFrequencySeconds", DEFAULT_COMMUNITY_RULES_IMPORT_FREQUENCY_SECONDS)
-	e.elastAlertRulesFolder = module.GetStringDefault(config, "elastAlertRulesFolder", DEFAULT_ELASTALERT_RULES_FOLDER)
 	e.rulesFingerprintFile = module.GetStringDefault(config, "rulesFingerprintFile", DEFAULT_RULES_FINGERPRINT_FILE)
 	e.CommunityRulesImportErrorSeconds = module.GetIntDefault(config, "communityRulesImportErrorSeconds", DEFAULT_COMMUNITY_RULES_IMPORT_ERROR_SECS)
 	e.failAfterConsecutiveErrorCount = module.GetIntDefault(config, "failAfterConsecutiveErrorCount", DEFAULT_FAIL_AFTER_CONSECUTIVE_ERROR_COUNT)
@@ -354,7 +338,7 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 		path := index[det.PublicID]
 		if path == "" {
 			name := sanitize.Name(det.PublicID)
-			path = filepath.Join(e.elastAlertRulesFolder, fmt.Sprintf("%s.yml", name))
+			log.Info(name)
 		}
 
 		if det.IsEnabled {
@@ -409,29 +393,10 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 				client.Logger.WithError(err).Error("error creating/updating osquery pack")
 			}
 
-			eaRule, err := e.sigmaToOsquery(ctx, det)
-			if err != nil {
-				errMap[det.PublicID] = fmt.Sprintf("unable to convert sigma to elastalert: %s", err)
-				continue
-			}
-
-			wrapped, err := e.wrapRule(det, eaRule)
-			if err != nil {
-				continue
-			}
-
-			err = e.WriteFile(path, []byte(wrapped), 0644)
-			if err != nil {
-				errMap[det.PublicID] = fmt.Sprintf("unable to write enabled detection file: %s", err)
-				continue
-			}
 		} else {
 			// was enabled, no longer is enabled: Disable
-			err = e.DeleteFile(path)
-			if err != nil && !os.IsNotExist(err) {
-				errMap[det.PublicID] = fmt.Sprintf("unable to remove disabled detection file: %s", err)
-				continue
-			}
+			// TODO - Remove query from Pack
+			log.Info("osquery - TODO")
 		}
 	}
 
@@ -654,7 +619,7 @@ func (e *OsqueryEngine) Sync(logger *log.Entry, forceSync bool) error {
 			})
 		}
 	} else {
-		zipHashes := "TOFIX"
+		zipHashes := "TODO"
 		fingerprints, err := json.Marshal(zipHashes)
 		if err != nil {
 			logger.WithError(err).Error("unable to marshal rules fingerprints")
@@ -950,11 +915,6 @@ func (e *OsqueryEngine) syncCommunityDetections(ctx context.Context, logger *log
 			rule, err := e.sigmaToOsquery(ctx, detect)
 			if err != nil {
 				errMap[detect.PublicID] = fmt.Errorf("unable to convert sigma to elastalert: %s", err)
-				continue
-			}
-
-			rule, err = e.wrapRule(detect, rule)
-			if err != nil {
 				continue
 			}
 
@@ -1316,83 +1276,6 @@ func (e *OsqueryEngine) MergeAuxiliaryData(detect *model.Detection) error {
 	return nil
 }
 
-func (e *OsqueryEngine) getCustomAlerters(tags []string) ([]string, string) {
-	if e.customAlerters != nil {
-		alertersKey := ""
-		paramsKey := ""
-		for _, tag := range tags {
-			if strings.HasPrefix(tag, "so.alerters.") {
-				alertersKey = strings.TrimPrefix(tag, "so.alerters.")
-			}
-			if strings.HasPrefix(tag, "so.params.") {
-				paramsKey = strings.TrimPrefix(tag, "so.params.")
-			}
-		}
-		alerters := module.GetStringArrayDefault(*e.customAlerters, alertersKey, []string{})
-		params := module.GetStringDefault(*e.customAlerters, paramsKey, "")
-		return alerters, params
-	}
-	return []string{}, ""
-}
-
-func (e *OsqueryEngine) getAdditionalAlerters(severity int) ([]string, string) {
-	// Start with default alerters
-	alerters := e.additionalAlerters
-	params := e.additionalAlerterParams
-
-	// Override if info or above severity
-	if severity > 0 {
-		if len(e.informationalSeverityAlerters) > 0 {
-			alerters = e.informationalSeverityAlerters
-		}
-		if len(e.informationalSeverityAlerterParams) > 0 {
-			params = e.informationalSeverityAlerterParams
-		}
-	}
-
-	// Override if low or above severity
-	if severity > 1 {
-		if len(e.lowSeverityAlerters) > 0 {
-			alerters = e.lowSeverityAlerters
-		}
-		if len(e.lowSeverityAlerterParams) > 0 {
-			params = e.lowSeverityAlerterParams
-		}
-	}
-
-	// Override if med or above severity
-	if severity > 2 {
-		if len(e.mediumSeverityAlerters) > 0 {
-			alerters = e.mediumSeverityAlerters
-		}
-		if len(e.mediumSeverityAlerterParams) > 0 {
-			params = e.mediumSeverityAlerterParams
-		}
-	}
-
-	// Override if high or crit severity
-	if severity > 3 {
-		if len(e.highSeverityAlerters) > 0 {
-			alerters = e.highSeverityAlerters
-		}
-		if len(e.highSeverityAlerterParams) > 0 {
-			params = e.highSeverityAlerterParams
-		}
-	}
-
-	// Override if crit severity
-	if severity > 4 {
-		if len(e.criticalSeverityAlerters) > 0 {
-			alerters = e.criticalSeverityAlerters
-		}
-		if len(e.criticalSeverityAlerterParams) > 0 {
-			params = e.criticalSeverityAlerterParams
-		}
-	}
-
-	return alerters, params
-}
-
 type CustomWrapper struct {
 	DetectionTitle    string   `yaml:"detection_title"`
 	DetectionPublicId string   `yaml:"detection_public_id"`
@@ -1527,88 +1410,6 @@ func (dur *TimeFrame) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}{(Alias)(dur)})
 
 	return err
-}
-
-func (e *OsqueryEngine) wrapRule(det *model.Detection, rule string) (string, error) {
-	severities := map[model.Severity]int{
-		model.SeverityUnknown:       0,
-		model.SeverityInformational: 1,
-		model.SeverityLow:           2,
-		model.SeverityMedium:        3,
-		model.SeverityHigh:          4,
-		model.SeverityCritical:      5,
-	}
-
-	var sigmaTags []string
-	sigmaRule, err := ParseOsqueryRule([]byte(det.Content))
-	if err != nil {
-		log.WithError(err).WithField("detectionPublicId", det.PublicID).Error("failed to parse Sigma rule content")
-	} else {
-		sigmaTags = sigmaRule.Tags
-	}
-	alerters, params := e.getCustomAlerters(sigmaTags)
-	if len(alerters) == 0 {
-		alerters, params = e.getAdditionalAlerters(severities[det.Severity])
-	}
-
-	sevNum := severities[det.Severity]
-	realert := TimeFrame{}
-	realert.SetSeconds(0)
-
-	wrapper := &CustomWrapper{
-		DetectionTitle:    det.Title,
-		DetectionPublicId: det.PublicID,
-		EventModule:       "sigma",
-		EventDataset:      "sigma.alert",
-		EventSeverity:     sevNum,
-		SigmaCategory:     det.Category,
-		SigmaService:      det.Service,
-		SigmaProduct:      det.Product,
-		SigmaLevel:        string(det.Severity),
-		Alert:             []string{"modules.so.securityonion-es.SecurityOnionESAlerter"},
-		Index:             ".ds-logs-*",
-		Name:              fmt.Sprintf("%s -- %s", det.Title, det.PublicID),
-		Realert:           &realert,
-		Type:              "any",
-		Filter:            []map[string]interface{}{{"eql": rule}},
-	}
-
-	if slices.Contains(sigmaTags, "so.notification") {
-		// This is a detection for sending notifications only, do not add a new alert to Security Onion.
-		wrapper.Alert = nil
-	}
-
-	if licensing.IsEnabled(licensing.FEAT_NTF) {
-		// Add any custom alerters to the rule.
-		for _, alerter := range alerters {
-			alerter = strings.TrimSpace(alerter)
-			if len(alerter) > 0 {
-				wrapper.Alert = append(wrapper.Alert, alerter)
-			}
-		}
-	}
-
-	rawYaml, err := yaml.Marshal(wrapper)
-	if err != nil {
-		return "", err
-	}
-	strYaml := string(rawYaml)
-
-	if licensing.IsEnabled(licensing.FEAT_NTF) {
-		if len(params) > 0 {
-			strYaml += "\n" + params + "\n"
-		}
-	}
-
-	if len(wrapper.Alert) == 0 {
-		log.WithFields(log.Fields{
-			"detectionPublicId": det.PublicID,
-			"severity":          string(det.Severity),
-		}).Debug("Disabling Osquery rule due to no valid alerters")
-		strYaml += "\nis_enabled: False\n"
-	}
-
-	return strYaml, nil
 }
 
 func (e *OsqueryEngine) IntegrityCheck(canInterrupt bool, logger *log.Entry) (deployedButNotEnabled []string, enabledButNotDeployed []string, err error) {
