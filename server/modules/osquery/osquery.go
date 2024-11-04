@@ -329,18 +329,8 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 		}
 	}()
 
-	index, err := e.IndexExistingRules()
-	if err != nil {
-		return nil, fmt.Errorf("unable to index existing rules: %w", err)
-	}
-
 	for _, det := range detections {
-		path := index[det.PublicID]
-		if path == "" {
-			name := sanitize.Name(det.PublicID)
-			log.Info(name)
-		}
-
+		log.Info(det.Title)
 		if det.IsEnabled {
 
 			client := &Client{
