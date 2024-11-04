@@ -372,7 +372,7 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 			}
 
 			sqlQuery := "SELECT * FROM listening_ports;"
-			pack := OsqueryPack{
+			pack := OsqueryPackRequest{
 				Name:        "All-Hosts",
 				Description: "This pack is managed by Security Onion Detections. It targets all enrolled hosts across all policies.",
 				Enabled:     true,
@@ -1716,12 +1716,12 @@ type Client struct {
 	Logger   *log.Entry
 }
 
-type OsqueryPack struct {
+type OsqueryPackRequest struct {
 	Name        string           `json:"name"`
 	Description string           `json:"description"`
 	Enabled     bool             `json:"enabled"`
 	PolicyIDs   []string         `json:"policy_ids"`
-	Queries     map[string]Query `json:"queries"` // Map format required by API
+	Queries     map[string]Query `json:"queries"` // Map format for creating/updating packs
 	Shards      map[string]int   `json:"shards,omitempty"`
 }
 
@@ -1732,6 +1732,31 @@ type Query struct {
 	Removed    bool                   `json:"removed"`
 	Timeout    int                    `json:"timeout"`
 	EcsMapping map[string]interface{} `json:"ecs_mapping,omitempty"`
+}
+
+// For GET responses where queries is an array
+type OsqueryPackResponse struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Enabled     bool            `json:"enabled"`
+	PolicyIDs   []string        `json:"policy_ids"`
+	Queries     []QueryResponse `json:"queries"` // Array format for querying packs
+	Shards      map[string]int  `json:"shards,omitempty"`
+}
+
+type QueryResponse struct {
+	ID         string               `json:"id"`
+	Query      string               `json:"query"`
+	Interval   int                  `json:"interval"`
+	Snapshot   bool                 `json:"snapshot"`
+	Removed    bool                 `json:"removed"`
+	Timeout    int                  `json:"timeout"`
+	EcsMapping []EcsMappingResponse `json:"ecs_mapping,omitempty"`
+}
+
+type EcsMappingResponse struct {
+	Key   string      `json:"key"`
+	Value interface{} `json:"value"`
 }
 
 // doRequest is a generic function to handle HTTP requests, logging request and response details for debugging.
@@ -1811,7 +1836,7 @@ func (c *Client) CheckIfPackExists(packName string) (bool, error) {
 	}
 
 	var packResponse struct {
-		Data []OsqueryPack `json:"data"`
+		Data []OsqueryPackResponse `json:"data"`
 	}
 	if err := json.Unmarshal(response, &packResponse); err != nil {
 		logger.WithError(err).Error("failed to unmarshal JSON")
@@ -1829,7 +1854,7 @@ func (c *Client) CheckIfPackExists(packName string) (bool, error) {
 }
 
 // CreatePack creates a new Osquery pack
-func (c *Client) CreatePack(pack OsqueryPack) error {
+func (c *Client) CreatePack(pack OsqueryPackRequest) error {
 	logger := c.Logger.WithField("pack_name", pack.Name)
 	logger.Info("creating osquery pack")
 
@@ -1843,7 +1868,7 @@ func (c *Client) CreatePack(pack OsqueryPack) error {
 }
 
 // UpdatePack updates an existing Osquery pack
-func (c *Client) UpdatePack(packName string, pack OsqueryPack) error {
+func (c *Client) UpdatePack(packName string, pack OsqueryPackRequest) error {
 	logger := c.Logger.WithField("pack_name", packName)
 	logger.Info("updating osquery pack")
 
