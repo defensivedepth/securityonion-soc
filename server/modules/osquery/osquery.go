@@ -368,6 +368,7 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 				BaseURL:  "http://sa-upgradetest-jb:5601",
 				Username: "so_elastic",
 				Password: "+A;hhx>.w8~RGsa)mHm>esA43*4Q#N:(V?=o[nl6?@uMk8g;l0Z>-hc9AB5L1t1S+ao>vZf|",
+				Logger:   log.WithField("service", "osquery-client"),
 			}
 
 			sqlQuery := "SELECT * FROM listening_ports;"
@@ -403,10 +404,9 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 				},
 			}
 
-			// Check if the pack exists and create or update accordingly
 			exists, err := client.CheckIfPackExists(pack.Name)
 			if err != nil {
-				fmt.Printf("Error checking if pack exists: %v\n", err)
+				client.Logger.WithError(err).Error("error checking if pack exists")
 			}
 
 			if exists {
@@ -416,7 +416,7 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 			}
 
 			if err != nil {
-				fmt.Printf("Error creating/updating osquery pack: %v\n", err)
+				client.Logger.WithError(err).Error("error creating/updating osquery pack")
 			}
 
 			eaRule, err := e.sigmaToOsquery(ctx, det)
@@ -1718,9 +1718,9 @@ type Client struct {
 	BaseURL  string
 	Username string
 	Password string
+	Logger   *log.Entry
 }
 
-// OsqueryPack represents the payload structure for the Osquery pack creation.
 type OsqueryPack struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
@@ -1730,7 +1730,6 @@ type OsqueryPack struct {
 	Shards      map[string]int `json:"shards,omitempty"`
 }
 
-// Query represents an individual query within the Osquery pack.
 type Query struct {
 	ID         string       `json:"id,omitempty"`
 	Query      string       `json:"query"`
@@ -1741,20 +1740,25 @@ type Query struct {
 	EcsMapping []EcsMapping `json:"ecs_mapping,omitempty"`
 }
 
-// EcsMapping represents ECS mapping for fields within a query.
 type EcsMapping struct {
 	Key   string                 `json:"key"`
 	Value map[string]interface{} `json:"value"`
 }
 
-// doRequest is a generic function to handle HTTP requests, setting headers and authentication, and reading the response.
+// doRequest is a generic function to handle HTTP requests, logging request and response details for debugging.
 func (c *Client) doRequest(method, endpoint string, body interface{}) ([]byte, error) {
+	logger := c.Logger.WithFields(log.Fields{
+		"method":   method,
+		"endpoint": endpoint,
+	})
+
 	// Marshal body to JSON if provided
 	var jsonBody []byte
 	var err error
 	if body != nil {
 		jsonBody, err = json.Marshal(body)
 		if err != nil {
+			logger.WithError(err).Error("failed to marshal JSON body")
 			return nil, fmt.Errorf("failed to marshal JSON body: %w", err)
 		}
 	}
@@ -1763,7 +1767,13 @@ func (c *Client) doRequest(method, endpoint string, body interface{}) ([]byte, e
 	url := fmt.Sprintf("%s%s", c.BaseURL, endpoint)
 	req, err := http.NewRequest(method, url, bytes.NewBuffer(jsonBody))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		logger.WithError(err).Error("failed to create HTTP request")
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	// Log the request body if it exists
+	if jsonBody != nil {
+		logger.WithField("request_body", string(jsonBody)).Info("request body")
 	}
 
 	// Set headers and basic auth
@@ -1775,64 +1785,85 @@ func (c *Client) doRequest(method, endpoint string, body interface{}) ([]byte, e
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
+		logger.WithError(err).Error("failed to send HTTP request")
+		return nil, fmt.Errorf("failed to send HTTP request: %w", err)
 	}
 	defer resp.Body.Close()
 
+	// Log response status code
+	logger.WithField("status_code", resp.StatusCode).Info("received response")
+
 	// Check for HTTP status codes other than 200 or 201
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		bodyBytes, _ := ioutil.ReadAll(resp.Body)
+		logger.WithField("response_body", string(bodyBytes)).Error("unexpected status code")
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
 	// Read and return response body
 	responseBody, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
+		logger.WithError(err).Error("failed to read response body")
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
+	logger.WithField("response_body", string(responseBody)).Info("successful response")
 	return responseBody, nil
 }
 
 // CheckIfPackExists checks if an Osquery pack with the given name exists
 func (c *Client) CheckIfPackExists(packName string) (bool, error) {
+	logger := c.Logger.WithField("pack_name", packName)
+	logger.Info("checking if pack exists")
+
 	response, err := c.doRequest("GET", "/api/osquery/packs", nil)
 	if err != nil {
 		return false, err
 	}
 
-	// Unmarshal response and check for pack existence
 	var packResponse struct {
 		Data []OsqueryPack `json:"data"`
 	}
 	if err := json.Unmarshal(response, &packResponse); err != nil {
+		logger.WithError(err).Error("failed to unmarshal JSON")
 		return false, fmt.Errorf("failed to unmarshal JSON: %w", err)
 	}
 
 	for _, pack := range packResponse.Data {
 		if pack.Name == packName {
+			logger.Info("pack found")
 			return true, nil
 		}
 	}
+	logger.Info("pack not found")
 	return false, nil
 }
 
 // CreatePack creates a new Osquery pack
 func (c *Client) CreatePack(pack OsqueryPack) error {
+	logger := c.Logger.WithField("pack_name", pack.Name)
+	logger.Info("creating osquery pack")
+
 	_, err := c.doRequest("POST", "/api/osquery/packs", pack)
 	if err != nil {
+		logger.WithError(err).Error("failed to create osquery pack")
 		return fmt.Errorf("failed to create osquery pack: %w", err)
 	}
-	fmt.Println("Osquery pack created successfully")
+	logger.Info("osquery pack created successfully")
 	return nil
 }
 
 // UpdatePack updates an existing Osquery pack
 func (c *Client) UpdatePack(packName string, pack OsqueryPack) error {
+	logger := c.Logger.WithField("pack_name", packName)
+	logger.Info("updating osquery pack")
+
 	endpoint := fmt.Sprintf("/api/osquery/packs/%s", packName)
 	_, err := c.doRequest("PUT", endpoint, pack)
 	if err != nil {
+		logger.WithError(err).Error("failed to update osquery pack")
 		return fmt.Errorf("failed to update osquery pack: %w", err)
 	}
-	fmt.Println("Osquery pack updated successfully")
+	logger.Info("osquery pack updated successfully")
 	return nil
 }
