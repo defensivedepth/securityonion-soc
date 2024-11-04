@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 )
+
 import (
 	"bytes"
 	"context"
@@ -1694,6 +1695,11 @@ type EcsMapping struct {
 	Value []string `json:"value,omitempty"`
 }
 
+// PackResponse represents the structure of the response from the GET /api/osquery/packs API.
+type PackResponse struct {
+	Data []OsqueryPack `json:"data"`
+}
+
 // checkIfPackExists checks if an Osquery pack with the given name exists by using the GET packs API.
 func checkIfPackExists(baseURL, username, password, packName string) (bool, error) {
 	url := fmt.Sprintf("%s/api/osquery/packs", baseURL)
@@ -1720,12 +1726,12 @@ func checkIfPackExists(baseURL, username, password, packName string) (bool, erro
 		return false, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var packs []OsqueryPack
-	if err := json.Unmarshal(body, &packs); err != nil {
+	var packResponse PackResponse
+	if err := json.Unmarshal(body, &packResponse); err != nil {
 		return false, fmt.Errorf("failed to unmarshal JSON: %w", err)
 	}
 
-	for _, pack := range packs {
+	for _, pack := range packResponse.Data {
 		if pack.Name == packName {
 			return true, nil
 		}
@@ -1748,7 +1754,7 @@ func createOrUpdateOsqueryPack(baseURL, username, password, sqlQuery string) err
 		Name:        packName,
 		Description: "This pack is managed by Security Onion Detections. It targets all enrolled hosts across all policies.",
 		Enabled:     true,
-		PolicyIDs:   []string{},
+		PolicyIDs:   []string{}, // Add specific policy IDs if needed
 		Shards:      map[string]int{"*": 100},
 		Queries: map[string]Query{
 			"baseline-test": {
