@@ -189,9 +189,10 @@ func (c *Client) UpdatePack(packID string, newPack OsqueryPackRequest) error {
 		return fmt.Errorf("failed to unmarshal existing pack JSON: %w", err)
 	}
 
-	// Prepare mergedQueries by adding existing ones
+	// Initialize mergedQueries as a map and populate it with existing queries
 	mergedQueries := make(map[string]Query)
 	for _, existingQuery := range existingPack.Queries {
+		logger.WithField("existing_query_id", existingQuery.ID).Info("adding existing query to mergedQueries")
 		mergedQueries[existingQuery.ID] = Query{
 			Query:    existingQuery.Query,
 			Interval: existingQuery.Interval,
@@ -201,7 +202,7 @@ func (c *Client) UpdatePack(packID string, newPack OsqueryPackRequest) error {
 		}
 	}
 
-	// Add new queries if they don’t exist
+	// Add new queries, avoiding duplicates based on det.PublicID
 	for id, newQuery := range newPack.Queries {
 		if _, exists := mergedQueries[id]; !exists {
 			logger.WithField("new_query_id", id).Info("adding new query to mergedQueries")
@@ -229,10 +230,7 @@ func (c *Client) UpdatePack(packID string, newPack OsqueryPackRequest) error {
 		Shards:      newPack.Shards,
 	}
 
-	logger.WithFields(log.Fields{
-		"updatedPack": updatedPack,
-	}).Info("final updated pack query")
-
+	logger.WithField("updatedPack", updatedPack).Info("final updated pack query")
 	logger.Info("updating osquery pack with full merged queries set")
 	_, err = c.doRequest("PUT", endpoint, updatedPack)
 	if err != nil {
