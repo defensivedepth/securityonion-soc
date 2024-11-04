@@ -401,16 +401,13 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 			exists, err := client.CheckIfPackExists(pack.Name)
 			if err != nil {
 				client.Logger.WithError(err).Error("error checking if pack exists")
+
 			}
 
 			if exists {
 				err = client.UpdatePack(pack.Name, pack)
 			} else {
 				err = client.CreatePack(pack)
-			}
-
-			if err != nil {
-				client.Logger.WithError(err).Error("error creating/updating osquery pack")
 			}
 
 			if err != nil {
@@ -1724,7 +1721,7 @@ type OsqueryPack struct {
 	Description string           `json:"description"`
 	Enabled     bool             `json:"enabled"`
 	PolicyIDs   []string         `json:"policy_ids"`
-	Queries     map[string]Query `json:"queries"`
+	Queries     map[string]Query `json:"queries"` // Map format required by API
 	Shards      map[string]int   `json:"shards,omitempty"`
 }
 
