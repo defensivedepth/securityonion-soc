@@ -339,11 +339,10 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 				Password: "+A;hhx>.w8~RGsa)mHm>esA43*4Q#N:(V?=o[nl6?@uMk8g;l0Z>-hc9AB5L1t1S+ao>vZf|",
 				Logger:   log.WithField("service", "osquery-client"),
 			}
-
-			log.WithField("osquery title", det.Title)
-			log.WithField("osquery pid", det.PublicID)
-			log.WithField("osquery id", det.Id)
-			log.WithField("osquery SQL", det.SQL)
+			client.Logger.WithField("title", det.Title).Info("osquery title")
+			client.Logger.WithField("pid", det.PublicID).Info("osquery title")
+			client.Logger.WithField("detid", det.Id).Info("osquery title")
+			client.Logger.WithField("sql", det.SQL).Info("osquery title")
 			//sqlQuery := "SELECT * FROM listening_ports;"
 			pack := OsqueryPackRequest{
 				Name:        "All-Hosts",
@@ -352,7 +351,7 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 				PolicyIDs:   []string{},
 				Shards:      map[string]int{"*": 100},
 				Queries: map[string]Query{
-					det.Id: {
+					det.PublicID: {
 						Query:    det.SQL,
 						Interval: 3600,
 						Snapshot: true,
@@ -375,19 +374,13 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 				client.Logger.WithError(err).Error("error checking if pack exists")
 			}
 
-			// Log the retrieved packID to verify
-			if packID != "" {
-				client.Logger.WithField("pack_id", packID).Info("pack exists, will update")
-			} else {
-				client.Logger.Info("pack does not exist, will create")
-				client.Logger.WithField("pack_id", packID).Info("pack exists, will update")
-			}
-
 			if packID != "" {
 				// Use pack ID to update the existing pack
+				client.Logger.WithField("pack_id", packID).Info("pack exists, will update")
 				err = client.UpdatePack(packID, pack)
 			} else {
 				// Create a new pack if it doesn't exist
+				client.Logger.Info("pack does not exist, will create")
 				err = client.CreatePack(pack)
 			}
 
