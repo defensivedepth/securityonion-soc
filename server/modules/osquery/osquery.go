@@ -716,10 +716,6 @@ func (e *OsqueryEngine) parseRepoRules(allRepos []*detections.RepoOnDisk) (detec
 }
 
 func (e *OsqueryEngine) syncCommunityDetections(ctx context.Context, logger *log.Entry, detects []*model.Detection) (errMap map[string]error, err error) {
-	existing, err := e.IndexExistingRules()
-	if err != nil {
-		return nil, err
-	}
 
 	community, err := e.srv.Detectionstore.GetAllDetections(ctx, model.WithEngine(model.EngineNameOsquery), model.WithCommunity(true))
 	if err != nil {
@@ -731,10 +727,6 @@ func (e *OsqueryEngine) syncCommunityDetections(ctx context.Context, logger *log
 	for _, det := range community {
 		toDelete[det.PublicID] = struct{}{}
 
-		path, ok := existing[det.PublicID]
-		if ok {
-			index[det.PublicID] = path
-		}
 	}
 
 	results := struct {
@@ -978,14 +970,6 @@ func (e *OsqueryEngine) syncCommunityDetections(ctx context.Context, logger *log
 			continue
 		}
 
-		path, ok := existing[publicId]
-		if ok {
-			err = e.DeleteFile(path)
-			if err != nil && !os.IsNotExist(err) {
-				errMap[publicId] = fmt.Errorf("unable to remove deleted detection file: %s", err)
-				continue
-			}
-		}
 	}
 
 	err = bulk.Close(ctx)
