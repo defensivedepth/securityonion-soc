@@ -189,7 +189,7 @@ func (c *Client) UpdatePack(packID string, newPack OsqueryPackRequest) error {
 		return fmt.Errorf("failed to unmarshal existing pack JSON: %w", err)
 	}
 
-	// Initialize mergedQueries as a map and populate it with existing queries
+	// Initialize mergedQueries and populate it with existing queries
 	mergedQueries := make(map[string]Query)
 	for _, existingQuery := range existingPack.Queries {
 		logger.WithField("existing_query_id", existingQuery.ID).Info("adding existing query to mergedQueries")
@@ -202,7 +202,7 @@ func (c *Client) UpdatePack(packID string, newPack OsqueryPackRequest) error {
 		}
 	}
 
-	// Add new queries, avoiding duplicates based on det.PublicID
+	// Add new queries if they don't exist in `mergedQueries`
 	for id, newQuery := range newPack.Queries {
 		if _, exists := mergedQueries[id]; !exists {
 			logger.WithField("new_query_id", id).Info("adding new query to mergedQueries")
@@ -212,15 +212,15 @@ func (c *Client) UpdatePack(packID string, newPack OsqueryPackRequest) error {
 		}
 	}
 
-	// Log the complete merged queries for verification
+	// Log all contents of mergedQueries for final confirmation
 	for id, query := range mergedQueries {
 		logger.WithFields(log.Fields{
 			"query_id": id,
 			"query":    query.Query,
-		}).Info("final merged query")
+		}).Info("final merged query before PUT request")
 	}
 
-	// Update the pack with the full merged queries set
+	// Create updatedPack with merged queries
 	updatedPack := OsqueryPackRequest{
 		Name:        newPack.Name,
 		Description: newPack.Description,
@@ -230,8 +230,9 @@ func (c *Client) UpdatePack(packID string, newPack OsqueryPackRequest) error {
 		Shards:      newPack.Shards,
 	}
 
-	logger.WithField("updatedPack", updatedPack).Info("final updated pack query")
-	logger.Info("updating osquery pack with full merged queries set")
+	logger.WithField("updatedPack", updatedPack).Info("final updated pack with merged queries")
+
+	// Send PUT request with full merged queries
 	_, err = c.doRequest("PUT", endpoint, updatedPack)
 	if err != nil {
 		logger.WithError(err).Error("failed to update osquery pack")
