@@ -133,6 +133,9 @@ type Detection struct {
 	Product string `json:"product,omitempty"`
 	Service string `json:"service,omitempty"`
 
+	// osquery query - osquery only
+	SQL string `json:"sql,omitempty"`
+
 	// AI Description fields
 	*AiFields `json:",omitempty"`
 }

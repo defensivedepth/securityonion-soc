@@ -340,7 +340,7 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 				Logger:   log.WithField("service", "osquery-client"),
 			}
 
-			sqlQuery := "SELECT * FROM listening_ports;"
+			//sqlQuery := "SELECT * FROM listening_ports;"
 			pack := OsqueryPackRequest{
 				Name:        "All-Hosts",
 				Description: "This pack is managed by Security Onion Detections. It targets all enrolled hosts across all policies.",
@@ -348,8 +348,8 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 				PolicyIDs:   []string{},
 				Shards:      map[string]int{"*": 100},
 				Queries: map[string]Query{
-					"baseline-test": {
-						Query:    sqlQuery,
+					det.Id: {
+						Query:    det.SQL,
 						Interval: 3600,
 						Snapshot: true,
 						Removed:  false,
