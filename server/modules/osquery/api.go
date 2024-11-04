@@ -229,6 +229,10 @@ func (c *Client) UpdatePack(packID string, newPack OsqueryPackRequest) error {
 		Shards:      newPack.Shards,
 	}
 
+	logger.WithFields(log.Fields{
+		"updatedPack": updatedPack,
+	}).Info("final updated pack query")
+
 	logger.Info("updating osquery pack with full merged queries set")
 	_, err = c.doRequest("PUT", endpoint, updatedPack)
 	if err != nil {
