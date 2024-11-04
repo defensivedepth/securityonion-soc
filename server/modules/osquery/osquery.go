@@ -339,10 +339,20 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 				Password: "+A;hhx>.w8~RGsa)mHm>esA43*4Q#N:(V?=o[nl6?@uMk8g;l0Z>-hc9AB5L1t1S+ao>vZf|",
 				Logger:   log.WithField("service", "osquery-client"),
 			}
-			client.Logger.WithField("title", det.Title).Info("osquery title")
-			client.Logger.WithField("pid", det.PublicID).Info("osquery title")
-			client.Logger.WithField("detid", det.Id).Info("osquery title")
-			client.Logger.WithField("sql", det.SQL).Info("osquery title")
+
+			var osqueryRule OsqueryRule
+			err := yaml.Unmarshal([]byte(det.Content), &osqueryRule)
+			if err != nil {
+				log.WithError(err).Error("failed to unmarshal detection content to OsqueryRule")
+				continue
+			}
+
+			if osqueryRule.SQL == nil || *osqueryRule.SQL == "" {
+				log.Warn("No SQL query defined in detection content")
+				continue
+			}
+
+			client.Logger.WithField("sql", osqueryRule.SQL).Info("osquery title")
 			//sqlQuery := "SELECT * FROM listening_ports;"
 			pack := OsqueryPackRequest{
 				Name:        "All-Hosts",
@@ -352,7 +362,7 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 				Shards:      map[string]int{"*": 100},
 				Queries: map[string]Query{
 					det.PublicID: {
-						Query:    det.SQL,
+						Query:    *osqueryRule.SQL,
 						Interval: 3600,
 						Snapshot: true,
 						Removed:  false,
