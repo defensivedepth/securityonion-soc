@@ -376,6 +376,7 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 				client.Logger.WithField("pack_id", packID).Info("pack exists, will update")
 			} else {
 				client.Logger.Info("pack does not exist, will create")
+				client.Logger.WithField("pack_id", packID).Info("pack exists, will update")
 			}
 
 			if packID != "" {

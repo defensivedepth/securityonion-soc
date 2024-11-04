@@ -147,11 +147,13 @@ func (c *Client) CheckIfPackExists(packName string) (string, error) {
 
 	for _, pack := range packResponse.Data {
 		if pack.Name == packName {
-			logger.Info("pack found")
+			logger.Info("osquery pack found")
+			logger.Info(pack.ID)
+			logger.Info(pack.Name)
 			return pack.ID, nil
 		}
 	}
-	logger.Info("pack not found")
+	logger.Info("osquery pack not found")
 	return "", nil
 }
 
