@@ -366,16 +366,18 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 				},
 			}
 
-			// Check if the pack exists and create or update accordingly
-			exists, err := client.CheckIfPackExists(pack.Name)
+			// Check if the pack exists and get the pack ID if it does
+			packID, err := client.CheckIfPackExists(pack.Name)
 			if err != nil {
 				client.Logger.WithError(err).Error("error checking if pack exists")
 
 			}
 
-			if exists {
-				err = client.UpdatePack(pack.Name, pack)
+			if packID != "" {
+				// Use pack ID to update the existing pack
+				err = client.UpdatePack(packID, pack)
 			} else {
+				// Create a new pack if it doesn't exist
 				err = client.CreatePack(pack)
 			}
 

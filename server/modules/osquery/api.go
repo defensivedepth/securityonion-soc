@@ -1,8 +1,3 @@
-// Copyright 2020-2024 Security Onion Solutions LLC and/or licensed to Security Onion Solutions LLC under one
-// or more contributor license agreements. Licensed under the Elastic License 2.0 as shown at
-// https://securityonion.net/license; you may not use this file except in compliance with the
-// Elastic License 2.0.
-
 package osquery
 
 import (
@@ -42,6 +37,7 @@ type Query struct {
 
 // For GET responses where queries is an array
 type OsqueryPackResponse struct {
+	ID          string          `json:"id"` // Include the ID field to capture it
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	Enabled     bool            `json:"enabled"`
@@ -131,14 +127,14 @@ func (c *Client) doRequest(method, endpoint string, body interface{}) ([]byte, e
 	return responseBody, nil
 }
 
-// CheckIfPackExists checks if an Osquery pack with the given name exists
-func (c *Client) CheckIfPackExists(packName string) (bool, error) {
+// CheckIfPackExists checks if an Osquery pack with the given name exists and returns the pack's ID if it does
+func (c *Client) CheckIfPackExists(packName string) (string, error) {
 	logger := c.Logger.WithField("pack_name", packName)
 	logger.Info("checking if pack exists")
 
 	response, err := c.doRequest("GET", "/api/osquery/packs", nil)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 
 	var packResponse struct {
@@ -146,17 +142,17 @@ func (c *Client) CheckIfPackExists(packName string) (bool, error) {
 	}
 	if err := json.Unmarshal(response, &packResponse); err != nil {
 		logger.WithError(err).Error("failed to unmarshal JSON")
-		return false, fmt.Errorf("failed to unmarshal JSON: %w", err)
+		return "", fmt.Errorf("failed to unmarshal JSON: %w", err)
 	}
 
 	for _, pack := range packResponse.Data {
 		if pack.Name == packName {
 			logger.Info("pack found")
-			return true, nil
+			return pack.ID, nil
 		}
 	}
 	logger.Info("pack not found")
-	return false, nil
+	return "", nil
 }
 
 // CreatePack creates a new Osquery pack
@@ -173,12 +169,12 @@ func (c *Client) CreatePack(pack OsqueryPackRequest) error {
 	return nil
 }
 
-// UpdatePack updates an existing Osquery pack
-func (c *Client) UpdatePack(packName string, pack OsqueryPackRequest) error {
-	logger := c.Logger.WithField("pack_name", packName)
+// UpdatePack updates an existing Osquery pack using its ID
+func (c *Client) UpdatePack(packID string, pack OsqueryPackRequest) error {
+	logger := c.Logger.WithField("pack_id", packID)
 	logger.Info("updating osquery pack")
 
-	endpoint := fmt.Sprintf("/api/osquery/packs/%s", packName)
+	endpoint := fmt.Sprintf("/api/osquery/packs/%s", packID)
 	_, err := c.doRequest("PUT", endpoint, pack)
 	if err != nil {
 		logger.WithError(err).Error("failed to update osquery pack")
