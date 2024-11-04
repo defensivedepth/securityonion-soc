@@ -35,15 +35,14 @@ type Query struct {
 	EcsMapping map[string]interface{} `json:"ecs_mapping,omitempty"`
 }
 
-// For GET responses where queries is an array
 type OsqueryPackResponse struct {
-	ID          string          `json:"id"` // Include the ID field to capture it
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Enabled     bool            `json:"enabled"`
-	PolicyIDs   []string        `json:"policy_ids"`
-	Queries     []QueryResponse `json:"queries"` // Array format for querying packs
-	Shards      map[string]int  `json:"shards,omitempty"`
+	SavedObjectID string          `json:"saved_object_id"` // Correct field for unique ID
+	Name          string          `json:"name"`
+	Description   string          `json:"description"`
+	Enabled       bool            `json:"enabled"`
+	PolicyIDs     []string        `json:"policy_ids"`
+	Queries       []QueryResponse `json:"queries"` // Array format for querying packs
+	Shards        map[string]int  `json:"shards,omitempty"`
 }
 
 type QueryResponse struct {
@@ -127,7 +126,7 @@ func (c *Client) doRequest(method, endpoint string, body interface{}) ([]byte, e
 	return responseBody, nil
 }
 
-// CheckIfPackExists checks if an Osquery pack with the given name exists and returns the pack's ID if it does
+// CheckIfPackExists checks if an Osquery pack with the given name exists and returns the pack's saved_object_id if it does
 func (c *Client) CheckIfPackExists(packName string) (string, error) {
 	logger := c.Logger.WithField("pack_name", packName)
 	logger.Info("checking if pack exists")
@@ -145,15 +144,14 @@ func (c *Client) CheckIfPackExists(packName string) (string, error) {
 		return "", fmt.Errorf("failed to unmarshal JSON: %w", err)
 	}
 
+	// Iterate over packs and check if any pack's name matches the target name
 	for _, pack := range packResponse.Data {
 		if pack.Name == packName {
-			logger.Info("osquery pack found")
-			logger.Info(pack.ID)
-			logger.Info(pack.Name)
-			return pack.ID, nil
+			logger.WithField("saved_object_id", pack.SavedObjectID).Info("pack found")
+			return pack.SavedObjectID, nil
 		}
 	}
-	logger.Info("osquery pack not found")
+	logger.Info("pack not found")
 	return "", nil
 }
 
