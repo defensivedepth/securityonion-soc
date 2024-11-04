@@ -340,6 +340,10 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 				Logger:   log.WithField("service", "osquery-client"),
 			}
 
+			log.WithField("osquery title", det.Title)
+			log.WithField("osquery pid", det.PublicID)
+			log.WithField("osquery id", det.Id)
+			log.WithField("osquery SQL", det.SQL)
 			//sqlQuery := "SELECT * FROM listening_ports;"
 			pack := OsqueryPackRequest{
 				Name:        "All-Hosts",
