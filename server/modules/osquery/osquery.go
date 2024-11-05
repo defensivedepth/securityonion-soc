@@ -348,7 +348,7 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 					Name:        "All-Hosts",
 					Description: "This is a test pack",
 					Enabled:     true,
-					PolicyIDs:   []string{"my_policy_id", "fleet-server-policy"},
+					PolicyIDs:   []string{"so-grid-nodes_general"},
 					Queries: map[string]Query{
 						det.PublicID: {
 							Query:    "SELECT * FROM listening_ports;",
