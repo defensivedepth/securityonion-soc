@@ -329,66 +329,57 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 		}
 	}()
 
+	client := NewClient("http://sa-upgradetest-jb:5601", "so_elastic", "+A;hhx>.w8~RGsa)mHm>esA43*4Q#N:(V?=o[nl6?@uMk8g;l0Z>-hc9AB5L1t1S+ao>vZf|")
+	packName := "All Enrolled Hosts"
+
 	for _, det := range detections {
 		log.Info(det.Title)
-		if det.IsEnabled {
+		if !det.IsEnabled {
+			log.Infof("Detection %s is disabled, skipping", det.Title)
+			// TODO: Remove query from Pack if previously enabled
+			continue
+		}
 
-			client := NewClient("http://sa-upgradetest-jb:5601", "so_elastic", "+A;hhx>.w8~RGsa)mHm>esA43*4Q#N:(V?=o[nl6?@uMk8g;l0Z>-hc9AB5L1t1S+ao>vZf|")
+		var osqueryRule OsqueryRule
+		if err := yaml.Unmarshal([]byte(det.Content), &osqueryRule); err != nil {
+			log.WithError(err).Errorf("Failed to unmarshal detection content for %s", det.Title)
+			errMap[det.PublicID] = err.Error()
+			continue
+		}
 
-			var osqueryRule OsqueryRule
-			err := yaml.Unmarshal([]byte(det.Content), &osqueryRule)
-			if err != nil {
-				log.WithError(err).Error("failed to unmarshal detection content to OsqueryRule")
+		if osqueryRule.SQL == nil || *osqueryRule.SQL == "" {
+			log.Warnf("No SQL query defined in detection content for %s", det.Title)
+			continue
+		}
+
+		// Check if the pack exists, and create it if not
+		packID, err := client.CheckIfPackExists(packName)
+		if err != nil {
+			client.Logger.Errorf("Error checking if pack exists for %s: %v", det.Title, err)
+			errMap[det.PublicID] = err.Error()
+			continue
+		}
+
+		if packID == "" {
+			if err := client.createBuiltinPack(packName); err != nil {
+				client.Logger.Errorf("Failed to create pack %s for %s: %v", packName, det.Title, err)
+				errMap[det.PublicID] = err.Error()
 				continue
 			}
-
-			if osqueryRule.SQL == nil || *osqueryRule.SQL == "" {
-				log.Warn("No SQL query defined in detection content")
-				continue
-			}
-
-			packName := "All-Hosts"
-			packID, err := client.CheckIfPackExists(packName)
-			if err != nil {
-				client.Logger.Errorf("Error checking if pack exists: %s", err)
-			}
-
-			if packID == "" {
-				// Updated PackData to use Queries as a map
-				packData := PackData{
-					Name:        "All-Hosts2",
-					Description: "This is a test pack",
-					Enabled:     true,
-					PolicyIDs:   []string{"so-grid-nodes_general"},
-				}
-
-				// Log the pack data to verify its structure
-				client.Logger.Infof("Pack data being sent: %+v", packData)
-
-				err = client.CreatePack(packData)
-				if err != nil {
-					client.Logger.Errorf("Error creating pack: %s", err)
-				}
-
-			} else {
-				client.Logger.Infof("Pack %s exists with ID %s, adding new query...", packName, packID)
-				newQuery := Query{
-					Query:    *osqueryRule.SQL,
-					Interval: 21600,
-					Timeout:  120,
-				}
-
-				// Use AddQueryToPack to merge the new query with existing ones
-				err = client.AddQueryToPack(packID, det.PublicID, newQuery)
-				if err != nil {
-					client.Logger.Errorf("Error adding query to pack: %s", err)
-				}
-			}
-
+			packID, _ = client.CheckIfPackExists(packName)
 		} else {
-			// was enabled, no longer is enabled: Disable
-			// TODO - Remove query from Pack
-			log.Info("osquery - TODO")
+			client.Logger.Infof("Pack %s exists with ID %s, adding new query...", packName, packID)
+		}
+
+		// Define new query and add it to the pack
+		newQuery := Query{
+			Query:    *osqueryRule.SQL,
+			Interval: 21600,
+			Timeout:  120,
+		}
+		if err := client.AddQueryToPack(packID, det.PublicID, newQuery); err != nil {
+			client.Logger.Errorf("Error adding query to pack %s for %s: %v", packName, det.Title, err)
+			errMap[det.PublicID] = err.Error()
 		}
 	}
 

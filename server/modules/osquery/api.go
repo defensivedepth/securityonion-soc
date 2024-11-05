@@ -174,3 +174,40 @@ func (c *Client) AddQueryToPack(packID, newQueryName string, newQuery Query) err
 	c.Logger.Info("Query added successfully to pack")
 	return nil
 }
+
+func (client *Client) createBuiltinPack(packName string) error {
+	// Define possible packs
+	packs := map[string]PackData{
+		"All Enrolled Hosts": {
+			Name:        "All Enrolled Hosts",
+			Description: "This is a test pack for all enrolled hosts",
+			Enabled:     true,
+			PolicyIDs:   []string{"so-grid-nodes_general"},
+		},
+		"Grid Nodes": {
+			Name:        "Grid Nodes",
+			Description: "This is a test pack for grid nodes",
+			Enabled:     true,
+			PolicyIDs:   []string{"so-grid-nodes_general"},
+		},
+	}
+
+	// Check if the provided packName exists in the predefined packs
+	packData, exists := packs[packName]
+	if !exists {
+		client.Logger.Errorf("Unknown pack: %s", packName)
+		return fmt.Errorf("unknown pack: %s", packName)
+	}
+
+	// Log the pack data to verify its structure
+	client.Logger.Infof("Pack data being sent: %+v", packData)
+
+	// Create the pack
+	err := client.CreatePack(packData)
+	if err != nil {
+		client.Logger.Errorf("Error creating pack %s: %s", packData.Name, err)
+		return err
+	}
+
+	return nil
+}
