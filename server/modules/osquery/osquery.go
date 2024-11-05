@@ -333,69 +333,49 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 		log.Info(det.Title)
 		if det.IsEnabled {
 
-			client := &Client{
-				BaseURL:  "http://sa-upgradetest-jb:5601",
-				Username: "so_elastic",
-				Password: "+A;hhx>.w8~RGsa)mHm>esA43*4Q#N:(V?=o[nl6?@uMk8g;l0Z>-hc9AB5L1t1S+ao>vZf|",
-				Logger:   log.WithField("service", "osquery-client"),
-			}
+			client := NewClient("http://sa-upgradetest-jb:5601", "so_elastic", "+A;hhx>.w8~RGsa)mHm>esA43*4Q#N:(V?=o[nl6?@uMk8g;l0Z>-hc9AB5L1t1S+ao>vZf|")
 
-			var osqueryRule OsqueryRule
-			err := yaml.Unmarshal([]byte(det.Content), &osqueryRule)
+			packName := "All-Hosts"
+			packID, err := client.CheckIfPackExists(packName)
 			if err != nil {
-				log.WithError(err).Error("failed to unmarshal detection content to OsqueryRule")
-				continue
+				client.Logger.Errorf("Error checking if pack exists: %s", err)
+
 			}
 
-			if osqueryRule.SQL == nil || *osqueryRule.SQL == "" {
-				log.Warn("No SQL query defined in detection content")
-				continue
-			}
-
-			client.Logger.WithField("sql", osqueryRule.SQL).Info("osquery title")
-			//sqlQuery := "SELECT * FROM listening_ports;"
-			pack := OsqueryPackRequest{
-				Name:        "All-Hosts",
-				Description: "This pack is managed by Security Onion Detections. It targets all enrolled hosts across all policies.",
-				Enabled:     true,
-				PolicyIDs:   []string{},
-				Shards:      map[string]int{"*": 100},
-				Queries: map[string]Query{
-					det.PublicID: {
-						Query:    *osqueryRule.SQL,
-						Interval: 3600,
-						Snapshot: true,
-						Removed:  false,
-						Timeout:  60,
-						EcsMapping: map[string]interface{}{
-							"client.port": map[string]interface{}{
-								"field": "port",
-							},
-							"tags": map[string]interface{}{
-								"value": []string{"tag1", "tag2"},
+			if packID == "" {
+				client.Logger.Infof("Pack %s does not exist, creating it...", packName)
+				packData := PackData{
+					Name:        packName,
+					Description: "This is a test pack",
+					Enabled:     true,
+					PolicyIDs:   []string{"my_policy_id", "fleet-server-policy"},
+					Queries: map[string]Query{
+						"my_query": {
+							Query:    "SELECT * FROM listening_ports;",
+							Interval: 60,
+							Timeout:  120,
+							ECSMapping: map[string]ECSMap{
+								"client.port": {Field: "port"},
+								"tags":        {Value: []string{"tag1", "tag2"}},
 							},
 						},
 					},
-				},
-			}
-
-			packID, err := client.CheckIfPackExists(pack.Name)
-			if err != nil {
-				client.Logger.WithError(err).Error("error checking if pack exists")
-			}
-
-			if packID != "" {
-				// Use pack ID to update the existing pack
-				client.Logger.WithField("pack_id", packID).Info("pack exists, will update")
-				err = client.UpdatePack(packID, pack)
+				}
+				err = client.CreatePack(packData)
+				if err != nil {
+					client.Logger.Errorf("Error creating pack: %s", err)
+				}
 			} else {
-				// Create a new pack if it doesn't exist
-				client.Logger.Info("pack does not exist, will create")
-				err = client.CreatePack(pack)
-			}
-
-			if err != nil {
-				client.Logger.WithError(err).Error("error creating/updating osquery pack")
+				client.Logger.Infof("Pack %s exists with ID %s, adding new query...", packName, packID)
+				newQuery := Query{
+					Query:    "SELECT * FROM processes WHERE name = 'nginx';",
+					Interval: 120,
+					Timeout:  30,
+				}
+				err = client.AddQueryToPack(packID, newQuery)
+				if err != nil {
+					client.Logger.Errorf("Error adding query to pack: %s", err)
+				}
 			}
 
 		} else {

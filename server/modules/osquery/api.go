@@ -1,3 +1,8 @@
+// Copyright 2020-2024 Security Onion Solutions LLC and/or licensed to Security Onion Solutions LLC under one
+// or more contributor license agreements. Licensed under the Elastic License 2.0 as shown at
+// https://securityonion.net/license; you may not use this file except in compliance with the
+// Elastic License 2.0.
+
 package osquery
 
 import (
@@ -9,7 +14,6 @@ import (
 	"net/http"
 )
 
-// Client holds base URL and authentication for API requests
 type Client struct {
 	BaseURL  string
 	Username string
@@ -17,243 +21,151 @@ type Client struct {
 	Logger   *log.Entry
 }
 
-type OsqueryPackRequest struct {
-	Name        string           `json:"name"`
-	Description string           `json:"description"`
-	Enabled     bool             `json:"enabled"`
-	PolicyIDs   []string         `json:"policy_ids"`
-	Queries     map[string]Query `json:"queries"` // Map format for creating/updating packs
-	Shards      map[string]int   `json:"shards,omitempty"`
+func NewClient(baseURL, username, password string) *Client {
+	return &Client{
+		BaseURL:  baseURL,
+		Username: username,
+		Password: password,
+		Logger:   log.WithField("module", "osquery-client"),
+	}
 }
 
+// PackData represents the pack details
+type PackData struct {
+	Name          string           `json:"name"`
+	Description   string           `json:"description,omitempty"`
+	Enabled       bool             `json:"enabled"`
+	PolicyIDs     []string         `json:"policy_ids,omitempty"`
+	Queries       map[string]Query `json:"queries,omitempty"`
+	SavedObjectID string           `json:"saved_object_id,omitempty"`
+}
+
+// Query represents the osquery query structure
 type Query struct {
-	Query      string                 `json:"query"`
-	Interval   int                    `json:"interval"`
-	Snapshot   bool                   `json:"snapshot"`
-	Removed    bool                   `json:"removed"`
-	Timeout    int                    `json:"timeout"`
-	EcsMapping map[string]interface{} `json:"ecs_mapping,omitempty"`
+	Query      string            `json:"query"`
+	Interval   int               `json:"interval"`
+	Timeout    int               `json:"timeout"`
+	ECSMapping map[string]ECSMap `json:"ecs_mapping,omitempty"`
 }
 
-type OsqueryPackResponse struct {
-	SavedObjectID string          `json:"saved_object_id"` // Correct field for unique ID
-	Name          string          `json:"name"`
-	Description   string          `json:"description"`
-	Enabled       bool            `json:"enabled"`
-	PolicyIDs     []string        `json:"policy_ids"`
-	Queries       []QueryResponse `json:"queries"` // Array format for querying packs
-	Shards        map[string]int  `json:"shards,omitempty"`
+// ECSMap represents the ECS mapping details
+type ECSMap struct {
+	Field string   `json:"field,omitempty"`
+	Value []string `json:"value,omitempty"`
 }
 
-type QueryResponse struct {
-	ID         string               `json:"id"`
-	Query      string               `json:"query"`
-	Interval   int                  `json:"interval"`
-	Snapshot   bool                 `json:"snapshot"`
-	Removed    bool                 `json:"removed"`
-	Timeout    int                  `json:"timeout"`
-	EcsMapping []EcsMappingResponse `json:"ecs_mapping,omitempty"`
-}
+// CheckIfPackExists checks if a pack exists and returns the pack ID if it does
+func (c *Client) CheckIfPackExists(packName string) (string, error) {
+	url := fmt.Sprintf("%s/api/osquery/packs", c.BaseURL)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.SetBasicAuth(c.Username, c.Password)
+	req.Header.Set("kbn-xsrf", "true")
 
-type EcsMappingResponse struct {
-	Key   string      `json:"key"`
-	Value interface{} `json:"value"`
-}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
 
-// doRequest is a generic function to handle HTTP requests, logging request and response details for debugging.
-func (c *Client) doRequest(method, endpoint string, body interface{}) ([]byte, error) {
-	logger := c.Logger.WithFields(log.Fields{
-		"method":   method,
-		"endpoint": endpoint,
-	})
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to fetch packs: %s", resp.Status)
+	}
 
-	// Marshal body to JSON if provided
-	var jsonBody []byte
-	var err error
-	if body != nil {
-		jsonBody, err = json.Marshal(body)
-		if err != nil {
-			logger.WithError(err).Error("failed to marshal JSON body")
-			return nil, fmt.Errorf("failed to marshal JSON body: %w", err)
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+
+	for _, pack := range result["data"].([]interface{}) {
+		if pack.(map[string]interface{})["name"] == packName {
+			return pack.(map[string]interface{})["saved_object_id"].(string), nil
 		}
 	}
+	return "", nil
+}
 
-	// Create the request
-	url := fmt.Sprintf("%s%s", c.BaseURL, endpoint)
-	req, err := http.NewRequest(method, url, bytes.NewBuffer(jsonBody))
+// CreatePack creates a new pack with the specified details
+func (c *Client) CreatePack(pack PackData) error {
+	url := fmt.Sprintf("%s/api/osquery/packs", c.BaseURL)
+	payload, _ := json.Marshal(pack)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
 	if err != nil {
-		logger.WithError(err).Error("failed to create HTTP request")
-		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+		return err
 	}
-
-	// Log the request body if it exists
-	if jsonBody != nil {
-		logger.WithField("request_body", string(jsonBody)).Info("request body")
-	}
-
-	// Set headers and basic auth
 	req.SetBasicAuth(c.Username, c.Password)
 	req.Header.Set("kbn-xsrf", "true")
 	req.Header.Set("Content-Type", "application/json")
 
-	// Execute the request
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		logger.WithError(err).Error("failed to send HTTP request")
-		return nil, fmt.Errorf("failed to send HTTP request: %w", err)
+		return err
 	}
 	defer resp.Body.Close()
 
-	// Log response status code
-	logger.WithField("status_code", resp.StatusCode).Info("received response")
-
-	// Check for HTTP status codes other than 200 or 201
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		bodyBytes, _ := ioutil.ReadAll(resp.Body)
-		logger.WithField("response_body", string(bodyBytes)).Error("unexpected status code")
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to create pack: %s", resp.Status)
 	}
-
-	// Read and return response body
-	responseBody, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		logger.WithError(err).Error("failed to read response body")
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	logger.WithField("response_body", string(responseBody)).Info("successful response")
-	return responseBody, nil
-}
-
-// CheckIfPackExists checks if an Osquery pack with the given name exists and returns the pack's saved_object_id if it does
-func (c *Client) CheckIfPackExists(packName string) (string, error) {
-	logger := c.Logger.WithField("pack_name", packName)
-	logger.Info("checking if pack exists")
-
-	response, err := c.doRequest("GET", "/api/osquery/packs", nil)
-	if err != nil {
-		return "", err
-	}
-
-	var packResponse struct {
-		Data []OsqueryPackResponse `json:"data"`
-	}
-	if err := json.Unmarshal(response, &packResponse); err != nil {
-		logger.WithError(err).Error("failed to unmarshal JSON")
-		return "", fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	// Iterate over packs and check if any pack's name matches the target name
-	for _, pack := range packResponse.Data {
-		if pack.Name == packName {
-			logger.WithField("saved_object_id", pack.SavedObjectID).Info("pack found")
-			return pack.SavedObjectID, nil
-		}
-	}
-	logger.Info("pack not found")
-	return "", nil
-}
-
-// CreatePack creates a new Osquery pack
-func (c *Client) CreatePack(pack OsqueryPackRequest) error {
-	logger := c.Logger.WithField("pack_name", pack.Name)
-	logger.Info("creating osquery pack")
-
-	_, err := c.doRequest("POST", "/api/osquery/packs", pack)
-	if err != nil {
-		logger.WithError(err).Error("failed to create osquery pack")
-		return fmt.Errorf("failed to create osquery pack: %w", err)
-	}
-	logger.Info("osquery pack created successfully")
+	c.Logger.Info("Pack created successfully")
 	return nil
 }
 
-// mergeQueries merges existing queries with new queries, preferring new queries if duplicates exist.
-func mergeQueries(existingQueries map[string]Query, newQueries map[string]Query, logger *log.Entry) map[string]Query {
-	merged := make(map[string]Query)
-
-	// Start with existing queries
-	for id, query := range existingQueries {
-		merged[id] = query
-		logger.WithField("query_id", id).Info("existing query added to merged set")
+// GetPack retrieves a pack by its ID
+func (c *Client) GetPack(packID string) (PackData, error) {
+	url := fmt.Sprintf("%s/api/osquery/packs/%s", c.BaseURL, packID)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return PackData{}, err
 	}
+	req.SetBasicAuth(c.Username, c.Password)
+	req.Header.Set("kbn-xsrf", "true")
 
-	// Add new queries, replacing existing ones if they share the same ID
-	for id, newQuery := range newQueries {
-		if _, exists := merged[id]; exists {
-			logger.WithField("query_id", id).Info("replacing existing query with new query")
-		} else {
-			logger.WithField("query_id", id).Info("adding new query to merged set")
-		}
-		merged[id] = newQuery
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return PackData{}, err
 	}
+	defer resp.Body.Close()
 
-	// Log the final merged set for verification
-	for id, query := range merged {
-		logger.WithFields(log.Fields{
-			"query_id": id,
-			"query":    query.Query,
-		}).Info("final merged query")
+	var pack PackData
+	if err := json.NewDecoder(resp.Body).Decode(&pack); err != nil {
+		return PackData{}, err
 	}
-
-	return merged
+	return pack, nil
 }
 
-// UpdatePack updates an existing Osquery pack by merging new queries with existing ones.
-func (c *Client) UpdatePack(packID string, newPack OsqueryPackRequest) error {
-	logger := c.Logger.WithField("pack_id", packID)
-	logger.Info("retrieving existing pack queries for update")
-
-	// Retrieve the existing pack to get current queries
-	endpoint := fmt.Sprintf("/api/osquery/packs/%s", packID)
-	response, err := c.doRequest("GET", endpoint, nil)
+// AddQueryToPack adds a new query to an existing pack
+func (c *Client) AddQueryToPack(packID string, newQuery Query) error {
+	pack, err := c.GetPack(packID)
 	if err != nil {
-		logger.WithError(err).Error("failed to retrieve existing pack for update")
-		return fmt.Errorf("failed to retrieve existing pack: %w", err)
+		return err
 	}
 
-	// Parse the existing pack's queries
-	var existingPack OsqueryPackResponse
-	if err := json.Unmarshal(response, &existingPack); err != nil {
-		logger.WithError(err).Error("failed to unmarshal existing pack JSON")
-		return fmt.Errorf("failed to unmarshal existing pack JSON: %w", err)
+	if pack.Queries == nil {
+		pack.Queries = make(map[string]Query)
 	}
+	pack.Queries["new_query"] = newQuery
 
-	// Convert existing pack queries from []QueryResponse to map[string]Query
-	existingQueries := make(map[string]Query)
-	for _, existingQuery := range existingPack.Queries {
-		existingQueries[existingQuery.ID] = Query{
-			Query:    existingQuery.Query,
-			Interval: existingQuery.Interval,
-			Snapshot: existingQuery.Snapshot,
-			Removed:  existingQuery.Removed,
-			Timeout:  existingQuery.Timeout,
-		}
-	}
-
-	// Merge queries
-	mergedQueries := mergeQueries(existingQueries, newPack.Queries, logger)
-
-	// Create an updated pack request
-	updatedPack := OsqueryPackRequest{
-		Name:        newPack.Name,
-		Description: newPack.Description,
-		Enabled:     newPack.Enabled,
-		PolicyIDs:   newPack.PolicyIDs,
-		Queries:     mergedQueries,
-		Shards:      newPack.Shards,
-	}
-
-	logger.WithField("updatedPack", updatedPack).Info("final updated pack with merged queries")
-
-	// Send PUT request with merged queries
-	_, err = c.doRequest("PUT", endpoint, updatedPack)
+	url := fmt.Sprintf("%s/api/osquery/packs/%s", c.BaseURL, packID)
+	payload, _ := json.Marshal(pack)
+	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(payload))
 	if err != nil {
-		logger.WithError(err).Error("failed to update osquery pack")
-		return fmt.Errorf("failed to update osquery pack: %w", err)
+		return err
 	}
+	req.SetBasicAuth(c.Username, c.Password)
+	req.Header.Set("kbn-xsrf", "true")
+	req.Header.Set("Content-Type", "application/json")
 
-	logger.Info("osquery pack updated successfully with merged queries")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to update pack: %s", resp.Status)
+	}
+	c.Logger.Info("Query added successfully to pack")
 	return nil
 }
