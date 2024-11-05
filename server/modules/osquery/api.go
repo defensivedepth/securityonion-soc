@@ -119,7 +119,6 @@ func (c *Client) CreatePack(pack PackData) error {
 	return nil
 }
 
-// GetPack retrieves a pack by its ID
 func (c *Client) GetPack(packID string) (PackData, error) {
 	url := fmt.Sprintf("%s/api/osquery/packs/%s", c.BaseURL, packID)
 	req, err := http.NewRequest("GET", url, nil)
@@ -135,10 +134,21 @@ func (c *Client) GetPack(packID string) (PackData, error) {
 	}
 	defer resp.Body.Close()
 
-	var pack PackData
-	if err := json.NewDecoder(resp.Body).Decode(&pack); err != nil {
-		return PackData{}, err
+	// Log the raw response body for debugging
+	rawBody, _ := ioutil.ReadAll(resp.Body)
+	c.Logger.Infof("Raw response from GetPack: %s", string(rawBody))
+
+	if resp.StatusCode != http.StatusOK {
+		return PackData{}, fmt.Errorf("failed to retrieve pack: %s - %s", resp.Status, string(rawBody))
 	}
+
+	// Unmarshal into PackData and log the fields
+	var pack PackData
+	if err := json.Unmarshal(rawBody, &pack); err != nil {
+		return PackData{}, fmt.Errorf("failed to decode pack data: %v", err)
+	}
+
+	c.Logger.Infof("Decoded PackData: %+v", pack)
 	return pack, nil
 }
 
@@ -149,11 +159,26 @@ func (c *Client) AddQueryToPack(packID, newQueryName string, newQuery Query) err
 		return fmt.Errorf("failed to retrieve pack: %v", err)
 	}
 
-	// Add the new query to the pack's existing queries
+	// Log the existing queries for debugging
+	c.Logger.Infof("Existing queries in pack before update: %+v", pack.Queries)
+
+	// Add or update the new query to the pack's queries
 	if pack.Queries == nil {
 		pack.Queries = make(map[string]Query)
 	}
 	pack.Queries[newQueryName] = newQuery
+
+	// Log the new query being added and the final state of all queries
+	c.Logger.Infof("New query being added: %+v", newQuery)
+	c.Logger.Infof("Updated queries in pack: %+v", pack.Queries)
+
+	// Ensure required fields like Name and Enabled are populated
+	if pack.Name == "" {
+		pack.Name = "All-Hosts" // Adjust with the pack’s actual name or add a default
+	}
+	if !pack.Enabled {
+		pack.Enabled = true
+	}
 
 	// Prepare the updated pack payload for the PUT request
 	url := fmt.Sprintf("%s/api/osquery/packs/%s", c.BaseURL, packID)
@@ -162,8 +187,8 @@ func (c *Client) AddQueryToPack(packID, newQueryName string, newQuery Query) err
 		return fmt.Errorf("failed to marshal updated pack data: %v", err)
 	}
 
-	// Log the payload to inspect the full updated pack data
-	c.Logger.Infof("Updating pack with new query. Payload: %s", string(payload))
+	// Log the entire payload to verify the full pack data
+	c.Logger.Infof("Full payload for pack update: %s", string(payload))
 
 	// Create the PUT request to update the pack
 	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(payload))
