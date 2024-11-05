@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/apex/log"
-	"io/ioutil"
 	"net/http"
 )
 
