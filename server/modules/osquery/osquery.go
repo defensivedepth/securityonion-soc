@@ -347,8 +347,6 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 				continue
 			}
 
-			client.Logger.WithField("sql", osqueryRule.SQL).Info("osquery title")
-
 			packName := "All-Hosts"
 			packID, err := client.CheckIfPackExists(packName)
 			if err != nil {
@@ -358,17 +356,11 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 			if packID == "" {
 				// Updated PackData to use Queries as a map
 				packData := PackData{
-					Name:        "All-Hosts",
+					Name:        "All-Hosts2",
 					Description: "This is a test pack",
 					Enabled:     true,
 					PolicyIDs:   []string{"so-grid-nodes_general"},
-					Queries: map[string]Query{
-						det.PublicID: {
-							Query:    *osqueryRule.SQL,
-							Interval: 60,
-							Timeout:  120,
-						},
-					},
+					}
 				}
 
 				// Log the pack data to verify its structure
@@ -383,8 +375,8 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 				client.Logger.Infof("Pack %s exists with ID %s, adding new query...", packName, packID)
 				newQuery := Query{
 					Query:    *osqueryRule.SQL,
-					Interval: 120,
-					Timeout:  30,
+					Interval: 21600,
+					Timeout:  120,
 				}
 
 				// Use AddQueryToPack to merge the new query with existing ones
