@@ -39,8 +39,8 @@ type PackData struct {
 	UpdatedAt     string           `json:"updated_at,omitempty"`
 	UpdatedBy     string           `json:"updated_by,omitempty"`
 	SavedObjectID string           `json:"saved_object_id,omitempty"`
-	PolicyIDs     []string         `json:"policy_ids,omitempty"`
-	Queries       map[string]Query `json:"queries,omitempty"`
+	PolicyIDs     []string         `json:"policy_ids"`
+	Queries       map[string]Query `json:"queries"`
 }
 
 type Query struct {
@@ -180,15 +180,17 @@ func (client *Client) createBuiltinPack(packName string) error {
 	packs := map[string]PackData{
 		"All-Enrolled-Hosts": {
 			Name:        "All-Enrolled-Hosts",
-			Description: "This is a builtin pack for all enrolled hosts",
+			Description: "This is a builtin pack for all enrolled hosts - it is managed by Security Onion Detections.",
 			Enabled:     true,
-			PolicyIDs:   []string{"so-grid-nodes_general"},
+			PolicyIDs:   []string{}, // Leave it empty, so that it applies to all Fleet Policies
+			Queries:     map[string]Query{},
 		},
 		"Grid-Nodes": {
 			Name:        "Grid-Nodes",
-			Description: "This is a builtin pack for grid nodes",
+			Description: "This is a builtin pack for grid nodes - it is managed by Security Onion Detections.",
 			Enabled:     true,
 			PolicyIDs:   []string{"so-grid-nodes_general"},
+			Queries:     map[string]Query{},
 		},
 	}
 
