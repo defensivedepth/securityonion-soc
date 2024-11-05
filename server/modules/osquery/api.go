@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/apex/log"
+	"io/ioutil"
 	"net/http"
 )
 
@@ -31,12 +32,12 @@ func NewClient(baseURL, username, password string) *Client {
 
 // PackData represents the pack details
 type PackData struct {
-	Name          string           `json:"name"`
-	Description   string           `json:"description,omitempty"`
-	Enabled       bool             `json:"enabled"`
-	PolicyIDs     []string         `json:"policy_ids,omitempty"`
-	Queries       map[string]Query `json:"queries,omitempty"`
-	SavedObjectID string           `json:"saved_object_id,omitempty"`
+	Name          string           `json:"name"`                      // Required
+	Description   string           `json:"description,omitempty"`     // Optional
+	Enabled       bool             `json:"enabled"`                   // Required
+	PolicyIDs     []string         `json:"policy_ids,omitempty"`      // Optional
+	Queries       map[string]Query `json:"queries,omitempty"`         // Required if non-empty
+	SavedObjectID string           `json:"saved_object_id,omitempty"` // Ignored during creation
 }
 
 // Query represents the osquery query structure
@@ -86,10 +87,16 @@ func (c *Client) CheckIfPackExists(packName string) (string, error) {
 	return "", nil
 }
 
-// CreatePack creates a new pack with the specified details
 func (c *Client) CreatePack(pack PackData) error {
 	url := fmt.Sprintf("%s/api/osquery/packs", c.BaseURL)
-	payload, _ := json.Marshal(pack)
+	payload, err := json.Marshal(pack)
+	if err != nil {
+		return fmt.Errorf("failed to marshal pack data: %v", err)
+	}
+
+	// Log the payload to inspect it
+	c.Logger.Infof("Creating pack with payload: %s", string(payload))
+
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
 	if err != nil {
 		return err
@@ -105,7 +112,8 @@ func (c *Client) CreatePack(pack PackData) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to create pack: %s", resp.Status)
+		body, _ := ioutil.ReadAll(resp.Body)
+		return fmt.Errorf("failed to create pack: %s - %s", resp.Status, string(body))
 	}
 	c.Logger.Info("Pack created successfully")
 	return nil
@@ -134,8 +142,7 @@ func (c *Client) GetPack(packID string) (PackData, error) {
 	return pack, nil
 }
 
-// AddQueryToPack adds a new query to an existing pack
-func (c *Client) AddQueryToPack(packID string, newQuery Query) error {
+func (c *Client) AddQueryToPack(packID, newQueryName string, newQuery Query) error {
 	pack, err := c.GetPack(packID)
 	if err != nil {
 		return err
@@ -144,7 +151,7 @@ func (c *Client) AddQueryToPack(packID string, newQuery Query) error {
 	if pack.Queries == nil {
 		pack.Queries = make(map[string]Query)
 	}
-	pack.Queries["new_query"] = newQuery
+	pack.Queries[newQueryName] = newQuery
 
 	url := fmt.Sprintf("%s/api/osquery/packs/%s", c.BaseURL, packID)
 	payload, _ := json.Marshal(pack)

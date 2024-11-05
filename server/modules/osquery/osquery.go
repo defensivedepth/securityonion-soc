@@ -343,14 +343,14 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 			}
 
 			if packID == "" {
-				client.Logger.Infof("Pack %s does not exist, creating it...", packName)
+
 				packData := PackData{
-					Name:        packName,
+					Name:        "All-Hosts",
 					Description: "This is a test pack",
 					Enabled:     true,
 					PolicyIDs:   []string{"my_policy_id", "fleet-server-policy"},
 					Queries: map[string]Query{
-						"my_query": {
+						det.PublicID: {
 							Query:    "SELECT * FROM listening_ports;",
 							Interval: 60,
 							Timeout:  120,
@@ -361,10 +361,15 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 						},
 					},
 				}
+
+				// Log the pack data to verify its structure
+				client.Logger.Infof("Pack data being sent: %+v", packData)
+
 				err = client.CreatePack(packData)
 				if err != nil {
 					client.Logger.Errorf("Error creating pack: %s", err)
 				}
+
 			} else {
 				client.Logger.Infof("Pack %s exists with ID %s, adding new query...", packName, packID)
 				newQuery := Query{
@@ -372,7 +377,7 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 					Interval: 120,
 					Timeout:  30,
 				}
-				err = client.AddQueryToPack(packID, newQuery)
+				err = client.AddQueryToPack(packID, det.PublicID, newQuery)
 				if err != nil {
 					client.Logger.Errorf("Error adding query to pack: %s", err)
 				}
