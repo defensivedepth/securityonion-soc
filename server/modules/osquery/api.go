@@ -31,26 +31,26 @@ func NewClient(baseURL, username, password string) *Client {
 }
 
 type PackData struct {
-	Name          string   `json:"name"`
-	Description   string   `json:"description,omitempty"`
-	Enabled       bool     `json:"enabled"`
-	CreatedAt     string   `json:"created_at,omitempty"`
-	CreatedBy     string   `json:"created_by,omitempty"`
-	UpdatedAt     string   `json:"updated_at,omitempty"`
-	UpdatedBy     string   `json:"updated_by,omitempty"`
-	SavedObjectID string   `json:"saved_object_id,omitempty"`
-	PolicyIDs     []string `json:"policy_ids,omitempty"`
-	Queries       []Query  `json:"queries"` // Queries is now a slice, not a map
+	Name          string           `json:"name"`
+	Description   string           `json:"description,omitempty"`
+	Enabled       bool             `json:"enabled"`
+	CreatedAt     string           `json:"created_at,omitempty"`
+	CreatedBy     string           `json:"created_by,omitempty"`
+	UpdatedAt     string           `json:"updated_at,omitempty"`
+	UpdatedBy     string           `json:"updated_by,omitempty"`
+	SavedObjectID string           `json:"saved_object_id,omitempty"`
+	PolicyIDs     []string         `json:"policy_ids,omitempty"`
+	Queries       map[string]Query `json:"queries"` // Queries is now a map again
 }
 
 type Query struct {
-	ID         string   `json:"id,omitempty"` // Includes ID for identification
+	ID         string   `json:"id,omitempty"`
 	Query      string   `json:"query"`
 	Interval   int      `json:"interval"`
 	Snapshot   bool     `json:"snapshot,omitempty"`
 	Removed    bool     `json:"removed,omitempty"`
 	Timeout    int      `json:"timeout"`
-	ECSMapping []ECSMap `json:"ecs_mapping,omitempty"` // ECSMapping as a list
+	ECSMapping []ECSMap `json:"ecs_mapping,omitempty"`
 }
 
 type ECSMap struct {
@@ -150,9 +150,8 @@ func (c *Client) GetPack(packID string) (PackData, error) {
 		return PackData{}, fmt.Errorf("failed to retrieve pack: %s - %s", resp.Status, string(rawBody))
 	}
 
-	// Decode the response into PackData
 	var response struct {
-		Data PackData `json:"data"` // Match response format
+		Data PackData `json:"data"`
 	}
 	if err := json.Unmarshal(rawBody, &response); err != nil {
 		return PackData{}, fmt.Errorf("failed to decode pack data: %v", err)
@@ -163,25 +162,16 @@ func (c *Client) GetPack(packID string) (PackData, error) {
 }
 
 func (c *Client) AddQueryToPack(packID, newQueryName string, newQuery Query) error {
-	// Fetch the existing pack to get all its details
 	pack, err := c.GetPack(packID)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve pack: %v", err)
 	}
 
-	// Check if the query exists and merge accordingly
-	updated := false
-	for i, q := range pack.Queries {
-		if q.ID == newQueryName { // Check if query ID matches
-			pack.Queries[i] = newQuery
-			updated = true
-			break
-		}
+	// Add or update the query in the pack's queries map
+	if pack.Queries == nil {
+		pack.Queries = make(map[string]Query)
 	}
-	if !updated {
-		newQuery.ID = newQueryName // Set ID for new queries
-		pack.Queries = append(pack.Queries, newQuery)
-	}
+	pack.Queries[newQueryName] = newQuery
 
 	// Prepare the updated pack payload for the PUT request
 	url := fmt.Sprintf("%s/api/osquery/packs/%s", c.BaseURL, packID)
