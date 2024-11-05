@@ -330,7 +330,7 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 	}()
 
 	client := NewClient("http://sa-upgradetest-jb:5601", "so_elastic", "+A;hhx>.w8~RGsa)mHm>esA43*4Q#N:(V?=o[nl6?@uMk8g;l0Z>-hc9AB5L1t1S+ao>vZf|")
-	packName := "All Enrolled Hosts"
+	packName := "All-Enrolled-Hosts"
 
 	for _, det := range detections {
 		log.Info(det.Title)

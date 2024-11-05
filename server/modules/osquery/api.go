@@ -40,7 +40,7 @@ type PackData struct {
 	UpdatedBy     string           `json:"updated_by,omitempty"`
 	SavedObjectID string           `json:"saved_object_id,omitempty"`
 	PolicyIDs     []string         `json:"policy_ids,omitempty"`
-	Queries       map[string]Query `json:"queries"`
+	Queries       map[string]Query `json:"queries,omitempty"`
 }
 
 type Query struct {
@@ -179,13 +179,13 @@ func (client *Client) createBuiltinPack(packName string) error {
 	// Define possible packs
 	packs := map[string]PackData{
 		"All Enrolled Hosts": {
-			Name:        "All Enrolled Hosts",
+			Name:        "All-Enrolled-Hosts",
 			Description: "This is a test pack for all enrolled hosts",
 			Enabled:     true,
 			PolicyIDs:   []string{"so-grid-nodes_general"},
 		},
 		"Grid Nodes": {
-			Name:        "Grid Nodes",
+			Name:        "Grid-Nodes",
 			Description: "This is a test pack for grid nodes",
 			Enabled:     true,
 			PolicyIDs:   []string{"so-grid-nodes_general"},
