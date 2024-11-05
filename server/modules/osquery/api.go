@@ -178,15 +178,15 @@ func (c *Client) AddQueryToPack(packID, newQueryName string, newQuery Query) err
 func (client *Client) createBuiltinPack(packName string) error {
 	// Define possible packs
 	packs := map[string]PackData{
-		"All Enrolled Hosts": {
+		"All-Enrolled-Hosts": {
 			Name:        "All-Enrolled-Hosts",
-			Description: "This is a test pack for all enrolled hosts",
+			Description: "This is a builtin pack for all enrolled hosts",
 			Enabled:     true,
 			PolicyIDs:   []string{"so-grid-nodes_general"},
 		},
-		"Grid Nodes": {
+		"Grid-Nodes": {
 			Name:        "Grid-Nodes",
-			Description: "This is a test pack for grid nodes",
+			Description: "This is a builtin pack for grid nodes",
 			Enabled:     true,
 			PolicyIDs:   []string{"so-grid-nodes_general"},
 		},
