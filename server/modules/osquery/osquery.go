@@ -360,7 +360,6 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 					Description: "This is a test pack",
 					Enabled:     true,
 					PolicyIDs:   []string{"so-grid-nodes_general"},
-					}
 				}
 
 				// Log the pack data to verify its structure
