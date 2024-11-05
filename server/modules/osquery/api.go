@@ -162,15 +162,17 @@ func (c *Client) AddQueryToPack(packID, newQueryName string, newQuery Query) err
 	// Log the existing queries for debugging
 	c.Logger.Infof("Existing queries in pack before update: %+v", pack.Queries)
 
-	// Add or update the new query to the pack's queries
+	// Ensure existing queries are initialized and then merge the new query
 	if pack.Queries == nil {
 		pack.Queries = make(map[string]Query)
 	}
+
+	// Add or update the new query in the pack's queries map
 	pack.Queries[newQueryName] = newQuery
 
 	// Log the new query being added and the final state of all queries
 	c.Logger.Infof("New query being added: %+v", newQuery)
-	c.Logger.Infof("Updated queries in pack: %+v", pack.Queries)
+	c.Logger.Infof("Updated queries in pack after merging: %+v", pack.Queries)
 
 	// Ensure required fields like Name and Enabled are populated
 	if pack.Name == "" {
