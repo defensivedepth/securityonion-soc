@@ -419,10 +419,10 @@ routes.push({ path: '/detection/:id', name: 'detection', component: {
 					this.extractElastAlertLogic();
 					this.extractedLogicClass = 'language-yaml';
 					break;
-                                case 'osquery':
-                                        this.extractOsqueryLogic();
-                                        this.extractedLogicClass = 'language-yaml';
-                                        break;
+				case 'osquery':
+					this.extractOsqueryLogic();
+					this.extractedLogicClass = 'language-sql';
+					break;
 			}
 		},
 		extractSuricataLogic() {
