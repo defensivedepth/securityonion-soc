@@ -1173,6 +1173,9 @@ routes.push({ path: '/detection/:id', name: 'detection', component: {
 				count: null,
 				seconds: null,
 				customFilter: null,
+				customPack: null,
+				intervalQuery: null,
+				isSnapshot: false,
 				note: '',
 			};
 		},
@@ -1189,6 +1192,12 @@ routes.push({ path: '/detection/:id', name: 'detection', component: {
 				case 'elastalert':
 					return [
 						{ title: this.i18n.customFilter, value: 'customFilter' }
+					];
+				case 'osquery':
+					return [
+						{ title: this.i18n.customFilter, value: 'customFilter' },
+						{ title: this.i18n.intervalQuery, value: 'intervalQuery' },
+						{ title: this.i18n.isSnapshot, value: 'isSnapshot' }
 					];
 			}
 
