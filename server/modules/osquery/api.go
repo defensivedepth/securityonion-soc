@@ -30,26 +30,35 @@ func NewClient(baseURL, username, password string) *Client {
 	}
 }
 
-// PackData represents the pack details
 type PackData struct {
-	Name          string           `json:"name"`                      // Required
-	Description   string           `json:"description,omitempty"`     // Optional
-	Enabled       bool             `json:"enabled"`                   // Required
-	PolicyIDs     []string         `json:"policy_ids,omitempty"`      // Optional
-	Queries       map[string]Query `json:"queries,omitempty"`         // Required if non-empty
-	SavedObjectID string           `json:"saved_object_id,omitempty"` // Ignored during creation
+	Name          string   `json:"name"`
+	Description   string   `json:"description,omitempty"`
+	Enabled       bool     `json:"enabled"`
+	CreatedAt     string   `json:"created_at,omitempty"`
+	CreatedBy     string   `json:"created_by,omitempty"`
+	UpdatedAt     string   `json:"updated_at,omitempty"`
+	UpdatedBy     string   `json:"updated_by,omitempty"`
+	SavedObjectID string   `json:"saved_object_id,omitempty"`
+	PolicyIDs     []string `json:"policy_ids,omitempty"`
+	Queries       []Query  `json:"queries"` // Queries is now a slice, not a map
 }
 
-// Query represents the osquery query structure
 type Query struct {
-	Query      string            `json:"query"`
-	Interval   int               `json:"interval"`
-	Timeout    int               `json:"timeout"`
-	ECSMapping map[string]ECSMap `json:"ecs_mapping,omitempty"`
+	ID         string   `json:"id,omitempty"` // Includes ID for identification
+	Query      string   `json:"query"`
+	Interval   int      `json:"interval"`
+	Snapshot   bool     `json:"snapshot,omitempty"`
+	Removed    bool     `json:"removed,omitempty"`
+	Timeout    int      `json:"timeout"`
+	ECSMapping []ECSMap `json:"ecs_mapping,omitempty"` // ECSMapping as a list
 }
 
-// ECSMap represents the ECS mapping details
 type ECSMap struct {
+	Key   string      `json:"key"`
+	Value ECSMapValue `json:"value"`
+}
+
+type ECSMapValue struct {
 	Field string   `json:"field,omitempty"`
 	Value []string `json:"value,omitempty"`
 }
@@ -134,7 +143,6 @@ func (c *Client) GetPack(packID string) (PackData, error) {
 	}
 	defer resp.Body.Close()
 
-	// Log the raw response body for debugging
 	rawBody, _ := ioutil.ReadAll(resp.Body)
 	c.Logger.Infof("Raw response from GetPack: %s", string(rawBody))
 
@@ -142,14 +150,16 @@ func (c *Client) GetPack(packID string) (PackData, error) {
 		return PackData{}, fmt.Errorf("failed to retrieve pack: %s - %s", resp.Status, string(rawBody))
 	}
 
-	// Unmarshal into PackData and log the fields
-	var pack PackData
-	if err := json.Unmarshal(rawBody, &pack); err != nil {
+	// Decode the response into PackData
+	var response struct {
+		Data PackData `json:"data"` // Match response format
+	}
+	if err := json.Unmarshal(rawBody, &response); err != nil {
 		return PackData{}, fmt.Errorf("failed to decode pack data: %v", err)
 	}
 
-	c.Logger.Infof("Decoded PackData: %+v", pack)
-	return pack, nil
+	c.Logger.Infof("Decoded PackData: %+v", response.Data)
+	return response.Data, nil
 }
 
 func (c *Client) AddQueryToPack(packID, newQueryName string, newQuery Query) error {
@@ -159,27 +169,18 @@ func (c *Client) AddQueryToPack(packID, newQueryName string, newQuery Query) err
 		return fmt.Errorf("failed to retrieve pack: %v", err)
 	}
 
-	// Log the existing queries for debugging
-	c.Logger.Infof("Existing queries in pack before update: %+v", pack.Queries)
-
-	// Ensure existing queries are initialized and then merge the new query
-	if pack.Queries == nil {
-		pack.Queries = make(map[string]Query)
+	// Check if the query exists and merge accordingly
+	updated := false
+	for i, q := range pack.Queries {
+		if q.ID == newQueryName { // Check if query ID matches
+			pack.Queries[i] = newQuery
+			updated = true
+			break
+		}
 	}
-
-	// Add or update the new query in the pack's queries map
-	pack.Queries[newQueryName] = newQuery
-
-	// Log the new query being added and the final state of all queries
-	c.Logger.Infof("New query being added: %+v", newQuery)
-	c.Logger.Infof("Updated queries in pack after merging: %+v", pack.Queries)
-
-	// Ensure required fields like Name and Enabled are populated
-	if pack.Name == "" {
-		pack.Name = "All-Hosts" // Adjust with the pack’s actual name or add a default
-	}
-	if !pack.Enabled {
-		pack.Enabled = true
+	if !updated {
+		newQuery.ID = newQueryName // Set ID for new queries
+		pack.Queries = append(pack.Queries, newQuery)
 	}
 
 	// Prepare the updated pack payload for the PUT request
@@ -189,10 +190,8 @@ func (c *Client) AddQueryToPack(packID, newQueryName string, newQuery Query) err
 		return fmt.Errorf("failed to marshal updated pack data: %v", err)
 	}
 
-	// Log the entire payload to verify the full pack data
 	c.Logger.Infof("Full payload for pack update: %s", string(payload))
 
-	// Create the PUT request to update the pack
 	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(payload))
 	if err != nil {
 		return err

@@ -343,20 +343,21 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 			}
 
 			if packID == "" {
-
+				// Updated PackData to use Queries as a slice
 				packData := PackData{
 					Name:        "All-Hosts",
 					Description: "This is a test pack",
 					Enabled:     true,
 					PolicyIDs:   []string{"so-grid-nodes_general"},
-					Queries: map[string]Query{
-						det.PublicID: {
+					Queries: []Query{ // Changed to slice of Query
+						{
+							ID:       det.PublicID, // Set the query ID
 							Query:    "SELECT * FROM listening_ports;",
 							Interval: 60,
 							Timeout:  120,
-							ECSMapping: map[string]ECSMap{
-								"client.port": {Field: "port"},
-								"tags":        {Value: []string{"tag1", "tag2"}},
+							ECSMapping: []ECSMap{ // Updated ECSMapping to slice
+								{Key: "client.port", Value: ECSMapValue{Field: "port"}},
+								{Key: "tags", Value: ECSMapValue{Value: []string{"tag1", "tag2"}}},
 							},
 						},
 					},
@@ -373,10 +374,13 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 			} else {
 				client.Logger.Infof("Pack %s exists with ID %s, adding new query...", packName, packID)
 				newQuery := Query{
+					ID:       det.PublicID, // Ensure each new query has a unique ID
 					Query:    "SELECT * FROM processes WHERE name = 'nginx';",
 					Interval: 120,
 					Timeout:  30,
 				}
+
+				// Use AddQueryToPack to merge the new query with existing ones
 				err = client.AddQueryToPack(packID, det.PublicID, newQuery)
 				if err != nil {
 					client.Logger.Errorf("Error adding query to pack: %s", err)
