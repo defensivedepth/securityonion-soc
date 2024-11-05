@@ -335,6 +335,20 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 
 			client := NewClient("http://sa-upgradetest-jb:5601", "so_elastic", "+A;hhx>.w8~RGsa)mHm>esA43*4Q#N:(V?=o[nl6?@uMk8g;l0Z>-hc9AB5L1t1S+ao>vZf|")
 
+			var osqueryRule OsqueryRule
+			err := yaml.Unmarshal([]byte(det.Content), &osqueryRule)
+			if err != nil {
+				log.WithError(err).Error("failed to unmarshal detection content to OsqueryRule")
+				continue
+			}
+
+			if osqueryRule.SQL == nil || *osqueryRule.SQL == "" {
+				log.Warn("No SQL query defined in detection content")
+				continue
+			}
+
+			client.Logger.WithField("sql", osqueryRule.SQL).Info("osquery title")
+
 			packName := "All-Hosts"
 			packID, err := client.CheckIfPackExists(packName)
 			if err != nil {
@@ -348,9 +362,9 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 					Description: "This is a test pack",
 					Enabled:     true,
 					PolicyIDs:   []string{"so-grid-nodes_general"},
-					Queries: map[string]Query{ // Changed to map[string]Query
-						det.PublicID: { // Use det.PublicID as the key
-							Query:    "SELECT * FROM listening_ports;",
+					Queries: map[string]Query{
+						det.PublicID: {
+							Query:    *osqueryRule.SQL,
 							Interval: 60,
 							Timeout:  120,
 						},
@@ -368,7 +382,7 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 			} else {
 				client.Logger.Infof("Pack %s exists with ID %s, adding new query...", packName, packID)
 				newQuery := Query{
-					Query:    "SELECT * FROM processes WHERE name = 'nginx';",
+					Query:    *osqueryRule.SQL,
 					Interval: 120,
 					Timeout:  30,
 				}
