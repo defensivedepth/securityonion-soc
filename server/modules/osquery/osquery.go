@@ -353,10 +353,6 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 							Query:    "SELECT * FROM listening_ports;",
 							Interval: 60,
 							Timeout:  120,
-							ECSMapping: []ECSMap{ // Updated ECSMapping to slice
-								{Key: "client.port", Value: ECSMapValue{Field: "port"}},
-								{Key: "tags", Value: ECSMapValue{Value: []string{"tag1", "tag2"}}},
-							},
 						},
 					},
 				}
@@ -375,10 +371,6 @@ func (e *OsqueryEngine) SyncLocalDetections(ctx context.Context, detections []*m
 					Query:    "SELECT * FROM processes WHERE name = 'nginx';",
 					Interval: 120,
 					Timeout:  30,
-					ECSMapping: []ECSMap{
-						{Key: "client.port", Value: ECSMapValue{Field: "port"}},
-						{Key: "tags", Value: ECSMapValue{Value: []string{"tag1", "tag2"}}},
-					},
 				}
 
 				// Use AddQueryToPack to merge the new query with existing ones
